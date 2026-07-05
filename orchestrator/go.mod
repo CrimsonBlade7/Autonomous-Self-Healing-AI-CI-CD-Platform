@@ -2,7 +2,6 @@ module github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform
 
 go 1.26.4
 
-require (
-	github.com/gorilla/mux v1.8.1 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
-)
+require github.com/coder/websocket v1.8.15
+
+require golang.org/x/sys v0.46.0 // indirect

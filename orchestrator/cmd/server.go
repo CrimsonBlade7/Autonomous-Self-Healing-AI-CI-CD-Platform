@@ -1,12 +1,17 @@
 package main
 
 import (
-	"fmt"
-	// "log"
-	"sync"
-	"github.com/gorilla/websocket"
+	_ "context"
+	_ "errors"
+	_ "fmt"
+	_ "log"
 	"net/http"
-	// "github.com/gorilla/mux"
+	_ "net/http"
+	_ "sync"
+	"time"
+
+	_ "github.com/coder/websocket"
+	_ "github.com/coder/websocket/wsjson"
 )
 
 /*
@@ -31,84 +36,20 @@ import (
 	PongMessage = 10
 */
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true
-	},
-}
-
-var clients = make(map[*websocket.Conn]bool)
-var broadcast = make(chan []byte)
-var mutex = &sync.Mutex{}
-
 func main() {
-	http.HandleFunc("/ws", wsHandler)
-	fmt.Println("Server starting on port 8080...")
-	go broadcastHandler()
-	err := http.ListenAndServe(":8080", nil)
-	if err != nil {
-		fmt.Println("Error starting server:", err)
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status":"ok"}`))
+	})
+
+	server := &http.Server{
+		Addr:         ":8080",
+		Handler:      mux,               // Inject your isolated router
+		ReadTimeout:  5 * time.Second,   // Max time to read the request body
+		WriteTimeout: 10 * time.Second,  // Max time to write the response
+		IdleTimeout:  120 * time.Second, // Max time to keep idle connections alive
 	}
-}
 
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		fmt.Println("Error upgrading to websocket:", err)
-		return
-	}
-	defer conn.Close()
-
-	mutex.Lock()
-	clients[conn] = true
-	mutex.Unlock()
-
-	connHandler(conn)
-}
-
-func connHandler(conn *websocket.Conn) {
-	for {
-		messageType, payload, err := conn.ReadMessage()
-		if err != nil {
-			fmt.Println("Error reading message:", err)
-			break
-		}
-		fmt.Println("Message recieved")
-
-		switch messageType {
-		case websocket.TextMessage:
-			fmt.Println("Recieved text message: ", string(payload))
-			prefix := []byte("Broadcasting message: ")
-			newPayload := append(prefix, payload...)
-			broadcast <- newPayload
-
-		case websocket.PingMessage:
-			fmt.Println("Ping handling not implemented yet")
-			return
-
-		case websocket.PongMessage:
-			fmt.Println("Ping handling not implemented yet")
-			return
-
-		default:
-			fmt.Println("Error with message type:", err)
-			return
-		}
-	}
-}
-
-func broadcastHandler() {
-	for {
-		message := <-broadcast
-		mutex.Lock()
-		for client := range clients {
-			err := client.WriteMessage(websocket.TextMessage, message)
-			if err != nil {
-				fmt.Println("Error broadcasting message:", err)
-				client.Close()
-				delete(clients, client)
-			}
-		}
-		mutex.Unlock()
-	}
 }
