@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "ai-engine"
+version = "0.1.0"
+description = "AI/Data Processing service for the Self-Healing CI/CD Platform"
+authors = []
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.111.0"
+uvicorn = { extras = ["standard"], version = "^0.30.0" }
+sqlalchemy = { extras = ["asyncio"], version = "^2.0.30" }
+asyncpg = "^0.29.0"
+pgvector = "^0.3.2"
+celery = { extras = ["redis"], version = "^5.4.0" }
+redis = "^5.0.8"
+sentence-transformers = "^3.0.0"
+anthropic = "^0.28.0"
+pydantic-settings = "^2.3.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

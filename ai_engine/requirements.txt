@@ -1,0 +1,23 @@
+# Core web framework + ASGI server
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# Database — async SQLAlchemy + PostgreSQL driver
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.29.0
+
+# Vector similarity search (pgvector Python types + SQLAlchemy integration)
+pgvector>=0.3.2
+
+# Async task queue — Celery uses Redis as broker and result backend
+celery[redis]>=5.4.0
+redis>=5.0.8
+
+# Embedding model — all-MiniLM-L6-v2 produces 384-dimensional vectors
+sentence-transformers>=3.0.0
+
+# LLM client — Anthropic Claude for patch generation (Phase 4)
+anthropic>=0.28.0
+
+# Settings management — reads env vars / .env files via Pydantic
+pydantic-settings>=2.3.0

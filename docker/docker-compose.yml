@@ -1,0 +1,107 @@
+# docker-compose.yml
+#
+# Brings up the full local development stack:
+#   postgres    — PostgreSQL 16 with pgvector extension
+#   redis       — Redis 7 (Celery broker + result backend)
+#   ai-engine   — Python FastAPI service (port 8001)
+#   celery-worker — Background task worker for log analysis / RAG / patch gen
+#
+# Required environment variable (set in your shell or a .env file at project root):
+#   ANTHROPIC_API_KEY=<your key>
+#
+# Usage:
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# NOTE: PostgreSQL runs the SQL files in migrations/ as init scripts on first
+# startup (when the data volume is empty). If you change the schema, run:
+#   docker compose -f docker/docker-compose.yml down -v
+# to wipe the volume and re-apply migrations from scratch.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aiplatform-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: aiplatform
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Mount migrations as init scripts; executed once in alphabetical order.
+      - ../migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d aiplatform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: aiplatform-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  ai-engine:
+    build:
+      context: ../ai_engine
+      dockerfile: ../docker/ai-engine.Dockerfile
+    container_name: aiplatform-ai-engine
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # Hot-reload: mounts source so code changes apply without rebuilding the image.
+    volumes:
+      - ../ai_engine:/app
+
+  celery-worker:
+    build:
+      context: ../ai_engine
+      dockerfile: ../docker/ai-engine.Dockerfile
+    container_name: aiplatform-celery-worker
+    # Override the default CMD to start the Celery worker instead of uvicorn.
+    command: celery -A app.tasks.workers.celery_app worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
+      REDIS_URL: redis://redis:6379/0
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../ai_engine:/app
+
+  # -------------------------------------------------------------------------
+  # Phase 6: Go orchestrator service
+  # Uncomment once docker/orchestrator.Dockerfile exists.
+  # -------------------------------------------------------------------------
+  # orchestrator:
+  #   build:
+  #     context: ../orchestrator
+  #     dockerfile: ../docker/orchestrator.Dockerfile
+  #   container_name: aiplatform-orchestrator
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     AI_ENGINE_URL: http://ai-engine:8001
+  #   depends_on:
+  #     - ai-engine
+
+volumes:
+  postgres_data:
