@@ -42,3 +42,13 @@
     │       └── workers.py
     ├── pyproject.toml        # Poetry / dependency management
     └── requirements.txt
+
+### Architectural Highlights
+
+- orchestrator/internal/docker: This encapsulates the Docker Engine API SDK logic. It keeps the core Go application clean from messy low-level container bindings. When a job triggers, this package handles downloading images, injecting volumes, running the test command, and streaming logs back.
+
+- ai_engine/app/services/rag_pipeline.py: This handles the generation of vector embeddings (e.g., using OpenAI or HuggingFace local models) and interfaces with vector_store.py to execute similarity searches across historical failures and codebase fragments.
+
+- migrations/: Kept at the root level because both services rely on the central PostgreSQL database. The Go orchestrator queries structural data (pipeline tracking), while the Python AI engine utilizes both structural data (logs) and unstructured vector embeddings (pgvector).
+
+- docker/: Consolidates the system orchestration. Running docker-compose up inside this folder instantly brings up the local Go api, Python worker nodes, Redis event queue, and a pre-configured PostgreSQL instance.
