@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	_ "log/slog"
+	_ "fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -44,52 +45,103 @@ type ResponseBody struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
-type EchoHandler struct{}
+func echoHandler(w http.ResponseWriter, r *http.Request) {
 
-func (h EchoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// extract the status
 	customStatus := r.URL.Query().Get("status")
 	if customStatus == "" {
 		customStatus = "success"
 	}
 
+	// decode the request
 	var body RequestBody
-	decode := json.NewDecoder(r.Body)
-	decode.DisallowUnknownFields()
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
 
+	if err := decoder.Decode(&body); err != nil {
+		writeJSONError(w, "Invalid JSON payload or unknown fields", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+	if body.Message == "" {
+		writeJSONError(w, "Missing required field: 'message'", http.StatusUnprocessableEntity)
+		return
+	}
+
+	// testing: output the message
+	slog.Info("Recieved message: ", "message", body.Message)
+
+	// initialize the response
+	resp := ResponseBody{
+		Status: customStatus,
+		Echo: body.Message,
+		Timestamp: time.Now().UTC(),
+	}
+
+	// set up the headers
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	// send the response encoded into a json
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		slog.Error("Failed to encode response", "error", err)
+	}
+}
+
+// send back an error message as a json
+func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func main() {
-	// logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
-	// slog.SetDefault(logger)
+	// initialize log creator
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
 
+	// initialize a custom multiplexer
 	mux := http.NewServeMux()
 
-	mux.Handle("POST /api/echo", EchoHandler{})
+	// initialize handlers for each route
+	mux.Handle("POST /api/echo", http.HandlerFunc(echoHandler))
 	mux.Handle("GET /", http.FileServer(http.Dir(".")))
 
+	// initialize the server settings
 	server := &http.Server{
-		Addr:         ":8080",
-		Handler:      mux,               // Inject your isolated router
-		ReadTimeout:  5 * time.Second,   // Max time to read the request body
-		WriteTimeout: 10 * time.Second,  // Max time to write the response
-		IdleTimeout:  120 * time.Second, // Max time to keep idle connections alive
+		Addr:              ":8080",
+		Handler:           mux,               // Inject your isolated router
+		ReadTimeout:       5 * time.Second,   // Max time to read the request body
+		ReadHeaderTimeout: 2 * time.Second,   // Max time to read just the headers
+		WriteTimeout:      10 * time.Second,  // Max time to write the response
+		IdleTimeout:       120 * time.Second, // Max time to keep idle connections alive
 	}
 
+	// create a context to manage the server's lifetime
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	// end the context when the function returns
 	defer stop()
 
+	// asynchronously open the server and listen on it
+	// when the server ends abnormally, force exit
 	go func() {
 		fmt.Printf("Server is starting on: %s\n", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("Error starting server: %v\n", err)
+			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
 		}
 	}()
 
+	// block until the context recieves an os.Interrupt
 	<-ctx.Done()
+
+	// create a context to manage shutting down
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
+	// end the context when the function ends
 	defer cancelShutdown()
 
+	// block until the shutdown responds
+	// if it does not respond or errors, the context forces it to end and it errors
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		fmt.Printf("Server forced to shutdown by: %v", err)
 	}
