@@ -2,19 +2,14 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	_ "log/slog"
 	"net/http"
-	_ "net/http"
 	"os"
 	"os/signal"
-	_ "sync"
 	"time"
-
-	"github.com/coder/websocket"
-	"github.com/coder/websocket/wsjson"
-	_ "github.com/coder/websocket/wsjson"
 )
 
 /*
@@ -39,13 +34,38 @@ import (
 	PongMessage = 10
 */
 
+type RequestBody struct {
+	Message string `json:"message"`
+}
+
+type ResponseBody struct {
+	Status    string    `json:"status"`
+	Echo      string    `json:"echo"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+type EchoHandler struct{}
+
+func (h EchoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	customStatus := r.URL.Query().Get("status")
+	if customStatus == "" {
+		customStatus = "success"
+	}
+
+	var body RequestBody
+	decode := json.NewDecoder(r.Body)
+	decode.DisallowUnknownFields()
+
+}
+
 func main() {
 	// logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 	// slog.SetDefault(logger)
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", wsHandler)
+	mux.Handle("POST /api/echo", EchoHandler{})
+	mux.Handle("GET /", http.FileServer(http.Dir(".")))
 
 	server := &http.Server{
 		Addr:         ":8080",
@@ -55,31 +75,18 @@ func main() {
 		IdleTimeout:  120 * time.Second, // Max time to keep idle connections alive
 	}
 
-	ctx, stop := signal.NotifyContext(
-		context.Background(),
-		os.Interrupt,
-	)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-
-	serverError := make(chan error, 1)
 
 	go func() {
 		fmt.Printf("Server is starting on: %s\n", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			serverError <- err
 			fmt.Printf("Error starting server: %v\n", err)
+			os.Exit(1)
 		}
 	}()
 
-	select {
-	case <-serverError:
-		fmt.Printf("Server startup failed.")
-		return
-
-	case <-ctx.Done():
-		fmt.Printf("Shutdown signal recieved. Shutting down server...")
-	}
-
+	<-ctx.Done()
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancelShutdown()
 
@@ -88,35 +95,4 @@ func main() {
 	}
 
 	fmt.Printf("Server shutdown complete!")
-}
-
-// Upgrades http to websocket connection
-func wsHandler(w http.ResponseWriter, r *http.Request) {
-	options := &websocket.AcceptOptions{
-		// TODO: properly verify connection origin for websocket upgrade
-		InsecureSkipVerify: true,
-	}
-
-	conn, err := websocket.Accept(w, r, options)
-	if err != nil {
-		fmt.Printf("Failed to accept websocket: %v", err)
-		return
-	}
-
-	defer conn.CloseNow()
-
-	for {
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		var message map[string]string
-
-		err := wsjson.Read(ctx, conn, message)
-		cancel()
-		if err != nil {
-			fmt.Printf("Read error (or client disconnected): %v", err)
-			break
-		}
-
-		fmt.Printf("Recieved message: %v", message)
-	}
-
 }
