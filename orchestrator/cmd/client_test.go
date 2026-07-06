@@ -54,6 +54,8 @@ func TestCallRemoteEchoService(t *testing.T) {
 		}
 
 		t.Logf("Server Responded! Status: %s | Echo: %s", res.Status, res.Echo)
-		time.Sleep(time.Duration(0.1 * float64(i)) * time.Second)
+		duration := time.Duration((i + 1) * 100) * time.Millisecond
+		time.Sleep(duration)
+		fmt.Printf("Real time: %v\n", duration)
 	}
 }

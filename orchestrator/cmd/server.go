@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	_ "fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -69,7 +68,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// testing: output the message
-	slog.Info("Recieved message: ", "message", body.Message)
+	fmt.Printf("Recieved message: %s\n", body.Message)
 
 	// initialize the response
 	resp := ResponseBody{
