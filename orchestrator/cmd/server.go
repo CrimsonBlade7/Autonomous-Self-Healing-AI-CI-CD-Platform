@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	_ "crypto/hmac"
+	_ "crypto/sha256"
+	_ "encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,13 +38,23 @@ import (
 */
 
 type RequestBody struct {
-	Message string `json:"message"`
+	Message   string `json:"message"`
+	Signature string `json: "signature"`
 }
 
 type ResponseBody struct {
 	Status    string    `json:"status"`
 	Echo      string    `json:"echo"`
 	Timestamp time.Time `json:"timestamp"`
+	Signature string    `json: "signature"`
+}
+
+// TODO: temporary, fix this later
+var key string = "temp-password"
+
+// verifies if the message is legitimate
+func verifyMessage(message, sig string) bool {
+	return true
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,8 +85,8 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 
 	// initialize the response
 	resp := ResponseBody{
-		Status: customStatus,
-		Echo: body.Message,
+		Status:    customStatus,
+		Echo:      body.Message,
 		Timestamp: time.Now().UTC(),
 	}
 
