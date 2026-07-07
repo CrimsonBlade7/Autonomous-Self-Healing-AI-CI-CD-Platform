@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/signal"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 /*
@@ -37,65 +39,84 @@ import (
 	PongMessage = 10
 */
 
-type RequestBody struct {
-	Message   string `json:"message"`
-	Signature string `json: "signature"`
+type Message struct {
+	Body      string `json:"body"`      // message content
+	Signature string `json:"signature"` // signature verification
 }
 
-type ResponseBody struct {
-	Status    string    `json:"status"`
-	Echo      string    `json:"echo"`
-	Timestamp time.Time `json:"timestamp"`
-	Signature string    `json: "signature"`
-}
+var key string
 
-// TODO: temporary, fix this later
-var key string = "temp-password"
+// generates the HMAC key based on the message and key
+func GenerateHMAC(message string) string {
+	hash := hmac.New(sha256.New, []byte(key))
+	hash.Write([]byte(message))
+	return hex.EncodeToString(hash.Sum(nil))
+}
 
 // verifies if the message is legitimate
-func verifyMessage(message, sig string) bool {
-	
+func verifyMessage(signature, message string) bool {
+	hash := hmac.New(sha256.New, []byte(key))
+	hash.Write([]byte(message))
+	expectedSignature, err := hex.DecodeString(GenerateHMAC(signature))
+	if err != nil {
+		return false
+	}
+	return hmac.Equal(hash.Sum(nil), expectedSignature)
+}
+
+// Package a string into a message
+func packageMessage(body string) Message {
+	return Message{
+		Body:      body,
+		Signature: GenerateHMAC(body),
+	}
+}
+
+// Unpackage a message body into a string.
+// Returns an error if the signature fails
+func unpackageMessage(message Message) (string, error) {
+	if verifyMessage(message.Signature, message.Body) {
+		return message.Body, nil
+	}
+	return "", errors.New("Message failed verification")
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
 
-	// extract the status
-	customStatus := r.URL.Query().Get("status")
-	if customStatus == "" {
-		customStatus = "success"
-	}
-
 	// decode the request
-	var body RequestBody
+	var message Message
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 
-	if err := decoder.Decode(&body); err != nil {
+	
+	if err := decoder.Decode(&message); err != nil {
 		writeJSONError(w, "Invalid JSON payload or unknown fields", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
-	if body.Message == "" {
+	
+	result, err := unpackageMessage(message)
+	if err != nil {
+		// idk the status codes
+		writeJSONError(w, "Signature verification failed", http.StatusExpectationFailed)
+		return
+	}
+	fmt.Println("-----------test------------")
+
+	if result == "" {
 		writeJSONError(w, "Missing required field: 'message'", http.StatusUnprocessableEntity)
 		return
 	}
 
 	// testing: output the message
-	fmt.Printf("Recieved message: %s\n", body.Message)
+	fmt.Printf("Recieved message: %s\n", result)
 
-	// initialize the response
-	resp := ResponseBody{
-		Status:    customStatus,
-		Echo:      body.Message,
-		Timestamp: time.Now().UTC(),
-	}
-
-	// set up the headers
+	// set up the headers to inform json to encode the message
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
 	// send the response encoded into a json
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
+	if err := json.NewEncoder(w).Encode(packageMessage(result)); err != nil {
 		slog.Error("Failed to encode response", "error", err)
 	}
 }
@@ -104,10 +125,17 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(statusCode)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": message})
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
 
 func main() {
+	// fetch the hmac key from .env
+	err := godotenv.Load("../.env")
+	if err != nil {
+		slog.Error("Error loading .env file", "error", err)
+	}
+	key = os.Getenv("HMAC_KEY")
+
 	// initialize log creator
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
