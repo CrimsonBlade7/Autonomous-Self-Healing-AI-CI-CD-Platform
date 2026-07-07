@@ -13,8 +13,7 @@ import (
 	"time"
 )
 
-// var testKey string = "balls"
-var testKey string = "toesmeatfeetkey123"
+var testKey string
 
 type Message struct {
 	Body      string `json:"body"`      // message content
@@ -30,13 +29,7 @@ func GenerateHMAC(message string) string {
 
 // verifies if the message is legitimate
 func verifyMessage(signature, message string) bool {
-	hash := hmac.New(sha256.New, []byte(testKey))
-	hash.Write([]byte(message))
-	expectedSignature, err := hex.DecodeString(GenerateHMAC(signature))
-	if err != nil {
-		return false
-	}
-	return hmac.Equal(hash.Sum(nil), expectedSignature)
+	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message)))
 }
 
 func CallRemoteEchoService(n int) (string, error) {
@@ -53,7 +46,7 @@ func CallRemoteEchoService(n int) (string, error) {
 		Signature: GenerateHMAC(body),
 	}
 
-	 buffer := new(bytes.Buffer)
+	buffer := new(bytes.Buffer)
 	err := json.NewEncoder(buffer).Encode(message)
 	if err != nil {
 		return "", err
@@ -68,6 +61,7 @@ func CallRemoteEchoService(n int) (string, error) {
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Message-Type", "echo")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -75,32 +69,45 @@ func CallRemoteEchoService(n int) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	var response Message
-	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return "", err
-	}
+	switch resp.Header.Get("Message-Type") {
 
-	// TODO: needs to decode json errors
-	fmt.Printf("Debug response: %s\n", response.Body)
-	
-	// verify response
-	if verifyMessage(response.Signature, response.Body) {
-		return response.Body, nil
+	case "echo":
+		var response Message
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			return "", err
+		}
+
+		// verify response
+		if verifyMessage(response.Signature, response.Body) {
+			return response.Body, nil
+		}
+		return "", errors.New("Response failed verification")
+
+	case "json-error":
+		var response map[string]string
+
+		if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+			return "", err
+		}
+		return "", errors.New(response["error"])
 	}
-	return "", errors.New("Response failed verification")
+	return "", errors.New("Invalid header")
 }
 
 // Go's test runner will execute this without needing a main() function
 func main() {
 	fmt.Println("Machine Client sending request...")
-
+	
 	for i := range 4 {
+		if i < 2 {testKey = "toesmeatfeetkey123"} else {testKey = "wrongpass"}
 		response, err := CallRemoteEchoService(i)
 		if err != nil {
 			fmt.Printf("Request failed: %v\n", err)
+		} else {
+			fmt.Printf("Server Responded! Response: %s\n", response)
 		}
 
-		fmt.Printf("Server Responded! Response: %s\n", response)
+
 		duration := time.Duration((i+1)*100) * time.Millisecond
 		time.Sleep(duration)
 		fmt.Printf("Real time: %v\n", duration)

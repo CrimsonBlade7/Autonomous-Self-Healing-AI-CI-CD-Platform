@@ -55,13 +55,7 @@ func GenerateHMAC(message string) string {
 
 // verifies if the message is legitimate
 func verifyMessage(signature, message string) bool {
-	hash := hmac.New(sha256.New, []byte(key))
-	hash.Write([]byte(message))
-	expectedSignature, err := hex.DecodeString(GenerateHMAC(signature))
-	if err != nil {
-		return false
-	}
-	return hmac.Equal(hash.Sum(nil), expectedSignature)
+	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message)))
 }
 
 // Package a string into a message
@@ -98,10 +92,9 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	result, err := unpackageMessage(message)
 	if err != nil {
 		// idk the status codes
-		writeJSONError(w, "Signature verification failed", http.StatusExpectationFailed)
+		writeJSONError(w, "Request signature verification failed", http.StatusUnauthorized)
 		return
 	}
-	fmt.Println("-----------test------------")
 
 	if result == "" {
 		writeJSONError(w, "Missing required field: 'message'", http.StatusUnprocessableEntity)
@@ -113,6 +106,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 
 	// set up the headers to inform json to encode the message
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Message-Type", "echo")
 	w.WriteHeader(http.StatusOK)
 
 	// send the response encoded into a json
@@ -124,6 +118,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 // send back an error message as a json
 func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Message-Type", "json-error")
 	w.WriteHeader(statusCode)
 	json.NewEncoder(w).Encode(map[string]string{"error": message})
 }
