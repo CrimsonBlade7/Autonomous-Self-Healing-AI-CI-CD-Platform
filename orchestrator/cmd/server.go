@@ -2,9 +2,9 @@ package main
 
 import (
 	"context"
-	_ "crypto/hmac"
-	_ "crypto/sha256"
-	_ "encoding/hex"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -54,7 +54,7 @@ var key string = "temp-password"
 
 // verifies if the message is legitimate
 func verifyMessage(message, sig string) bool {
-	return true
+	
 }
 
 func echoHandler(w http.ResponseWriter, r *http.Request) {
