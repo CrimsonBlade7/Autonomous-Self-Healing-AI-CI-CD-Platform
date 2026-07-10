@@ -97,7 +97,7 @@ func echoHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if result == "" {
-		writeJSONError(w, "Missing required field: 'message'", http.StatusUnprocessableEntity)
+		writeJSONError(w, "Missing required field: 'body'", http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -129,7 +129,12 @@ func main() {
 	if err != nil {
 		slog.Error("Error loading .env file", "error", err)
 	}
-	key = os.Getenv("HMAC_KEY")
+	key = os.Getenv("SECRET")
+
+	if key == "" {
+		slog.Error("Error: HMAC key has not been set")
+		return
+	}
 
 	// initialize log creator
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
