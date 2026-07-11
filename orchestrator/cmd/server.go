@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -39,102 +41,134 @@ import (
 	PongMessage = 10
 */
 
-type Message struct {
-	Body      string `json:"body"`      // message content
-	Signature string `json:"signature"` // signature verification
+type PullRequest struct {
+	Action  string `json:"action"`
+	Url     string `json:"url"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	HeadSHA string `json:"headsha"`
+	BaseSHA string `json:"basesha"`
 }
 
-var key string
+var (
+	secret string
+	port   string
+)
 
-// generates the HMAC key based on the message and key
-func GenerateHMAC(message string) string {
-	hash := hmac.New(sha256.New, []byte(key))
-	hash.Write([]byte(message))
-	return hex.EncodeToString(hash.Sum(nil))
-}
-
-// verifies if the message is legitimate
-func verifyMessage(signature, message string) bool {
-	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message)))
-}
-
-// Package a string into a message
-func packageMessage(body string) Message {
-	return Message{
-		Body:      body,
-		Signature: GenerateHMAC(body),
+// Converts a byte slice into a PullRequest struct
+func (pr *PullRequest) UnmarshalJSON(data []byte) error {
+	var temp struct {
+		Action      string `json:"action"`
+		PullRequest struct {
+			Url   string `json:"url"`
+			Title string `json:"title"`
+			Body  string `json:"body"`
+			Head  struct {
+				Sha string `json:"sha"`
+			} `json:"head"`
+			Base struct {
+				Sha string `json:"sha"`
+			} `json:"base"`
+		} `json:"pull_request"`
 	}
-}
 
-// Unpackage a message body into a string.
-// Returns an error if the signature fails
-func unpackageMessage(message Message) (string, error) {
-	if verifyMessage(message.Signature, message.Body) {
-		return message.Body, nil
-	}
-	return "", errors.New("Message failed verification")
-}
-
-func echoHandler(w http.ResponseWriter, r *http.Request) {
-
-	// decode the request
-	var message Message
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
-	
-	if err := decoder.Decode(&message); err != nil {
-		writeJSONError(w, "Invalid JSON payload or unknown fields", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
-	
-	result, err := unpackageMessage(message)
+	err := json.Unmarshal(data, &temp)
 	if err != nil {
-		// idk the status codes
-		writeJSONError(w, "Request signature verification failed", http.StatusUnauthorized)
-		return
+		return errors.New("Couldn't unmarshal the json webhook")
 	}
 
-	if result == "" {
-		writeJSONError(w, "Missing required field: 'body'", http.StatusUnprocessableEntity)
-		return
-	}
+	pr.Action = temp.Action
+	pr.Url = temp.PullRequest.Url
+	pr.Title = temp.PullRequest.Title
+	pr.Body = temp.PullRequest.Body
+	pr.HeadSHA = temp.PullRequest.Head.Sha
+	pr.BaseSHA = temp.PullRequest.Base.Sha
 
-	// testing: output the message
-	fmt.Printf("Recieved message: %s\n", result)
-
-	// set up the headers to inform json to encode the message
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Message-Type", "echo")
-	w.WriteHeader(http.StatusOK)
-
-	// send the response encoded into a json
-	if err := json.NewEncoder(w).Encode(packageMessage(result)); err != nil {
-		slog.Error("Failed to encode response", "error", err)
-	}
+	return nil
 }
 
-// send back an error message as a json
-func writeJSONError(w http.ResponseWriter, message string, statusCode int) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Message-Type", "json-error")
-	w.WriteHeader(statusCode)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
-}
-
-func main() {
-	// fetch the hmac key from .env
+// Loads the .env variables
+func loadEnv() {
 	err := godotenv.Load("../.env")
 	if err != nil {
 		slog.Error("Error loading .env file", "error", err)
-	}
-	key = os.Getenv("SECRET")
-
-	if key == "" {
-		slog.Error("Error: HMAC key has not been set")
 		return
 	}
+	secret = os.Getenv("SECRET")
+	if secret == "" {
+		slog.Error("Error: HMAC secret has not been set")
+		return
+	}
+	port = os.Getenv("PORT")
+	if port == "" {
+		slog.Error("Error: Port has not been set")
+		return
+	}
+}
+
+// Generates the HMAC key based on the message and secret
+func GenerateHMAC(message []byte) string {
+	hash := hmac.New(sha256.New, []byte(secret))
+	hash.Write(message)
+	return hex.EncodeToString(hash.Sum(nil))
+}
+
+// Verifies if the message is legitimate
+func verifyMessage(signature string, message []byte) bool {
+	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message)))
+}
+
+// Handles the extracted pull request
+func handlePullRequest(pr PullRequest) {
+	// to be implemented later
+}
+
+// Github webhook handler
+func whHandler(w http.ResponseWriter, r *http.Request) {
+
+	defer r.Body.Close()
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		slog.Error("Cannot read body")
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	realSig := strings.TrimPrefix(string(r.Header.Get("X-Hub-Signature-256")), "sha256=")
+	if !verifyMessage(realSig, body) {
+		slog.Info("Signature verification failed")
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var pullRequest PullRequest
+	pullRequest.UnmarshalJSON(body)
+
+	// testing: output the message
+	fmt.Println("Recieved message: ")
+	testPrint := "" +
+		"Action: " + pullRequest.Action + "\n" +
+		"Url: " + pullRequest.Url + "\n" +
+		"Title: " + pullRequest.Title + "\n" +
+		"Body: " + pullRequest.Body + "\n" +
+		"HeadSHA: " + pullRequest.HeadSHA + "\n" +
+		"BaseSHA:" + pullRequest.BaseSHA
+
+	fmt.Println(testPrint)
+
+	w.WriteHeader(http.StatusOK)
+
+	go handlePullRequest(pullRequest)
+}
+
+func main() {
+
+	loadEnv()
 
 	// initialize log creator
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -144,12 +178,12 @@ func main() {
 	mux := http.NewServeMux()
 
 	// initialize handlers for each route
-	mux.Handle("POST /api/echo", http.HandlerFunc(echoHandler))
-	mux.Handle("GET /", http.FileServer(http.Dir(".")))
+	mux.Handle("/api/webhook", http.HandlerFunc(whHandler))
+	mux.Handle("/", http.FileServer(http.Dir(".")))
 
 	// initialize the server settings
 	server := &http.Server{
-		Addr:              ":8080",
+		Addr:              port,
 		Handler:           mux,               // Inject your isolated router
 		ReadTimeout:       5 * time.Second,   // Max time to read the request body
 		ReadHeaderTimeout: 2 * time.Second,   // Max time to read just the headers
