@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -56,31 +57,37 @@ func main() {
 		io.Copy(os.Stdout, reader)
 
 		// creating containers for each image in imageNames without duplicates
-		duplicate := false
 		for _, contInfo := range contsItems {
 			if name == getContainerName(ctx, apiClient, contInfo.ID) {
-				duplicate = true
-				break
+				panic(errors.New("Duplicate container found"))
 			}
 		}
-		if !duplicate {
-			newCont, err := apiClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-				Image: fmt.Sprintf("%s:latest", name),
-				Config: &container.Config{
-					Cmd: []string{"echo", fmt.Sprintf("%s starting", name)},
-				},
-				Name: name,
+		newCont, err := apiClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+			Image: fmt.Sprintf("%s:latest", name),
+			Config: &container.Config{
+				Cmd: []string{"echo", fmt.Sprintf("%s starting", name)},
+			},
+			Name: name,
+		})
+		if err != nil {
+			panic(err)
+		}
+
+		contName := getContainerName(ctx, apiClient, newCont.ID)
+		fmt.Printf("Name: %s | ID: %s\n", contName, newCont.ID)
+
+		defer func() {
+			_, err = apiClient.ContainerRemove(ctx, newCont.ID, client.ContainerRemoveOptions{
+				RemoveVolumes: true,
+				RemoveLinks:   false,
+				Force:         false,
 			})
 			if err != nil {
 				panic(err)
 			}
-
-			contName := getContainerName(ctx, apiClient, newCont.ID)
-			fmt.Printf("Name: %s | ID: %s\n", contName, newCont.ID)
-		}
+			fmt.Printf("%s container closed\n", name)
+		}()
 	}
-
-	// can run containers here
 
 	reloadContainerSlice(ctx, apiClient)
 
@@ -96,6 +103,12 @@ func main() {
 			alpineID = cont.ID
 		}
 	}
+
+	_, err = apiClient.ContainerStart(ctx, alpineID, client.ContainerStartOptions{})
+	if err != nil {
+		panic(err)
+	}
+
 	wait := apiClient.ContainerWait(ctx, alpineID, client.ContainerWaitOptions{})
 	select {
 	case err = <-wait.Error:
@@ -106,10 +119,13 @@ func main() {
 		fmt.Println("success!")
 	}
 
-	out, err := apiClient.ContainerLogs(ctx, alpineID, client.ContainerLogsOptions{ShowStdout: true})
+	out, err := apiClient.ContainerLogs(ctx, alpineID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	})
 	if err != nil {
 		panic(err)
 	}
-
 	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 }
