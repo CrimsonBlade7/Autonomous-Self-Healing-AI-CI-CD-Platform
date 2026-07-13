@@ -8,7 +8,7 @@ import (
 	_ "slices"
 	"strings"
 
-	_ "github.com/moby/moby/api/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	_ "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -90,4 +90,26 @@ func main() {
 		fmt.Printf("%s container ID: %s\n", getContainerName(ctx, apiClient, cont.ID), cont.ID)
 	}
 
+	var alpineID string
+	for _, cont := range contsItems {
+		if getContainerName(ctx, apiClient, cont.ID) == "alpine" {
+			alpineID = cont.ID
+		}
+	}
+	wait := apiClient.ContainerWait(ctx, alpineID, client.ContainerWaitOptions{})
+	select {
+	case err = <-wait.Error:
+		if err != nil {
+			panic(err)
+		}
+	case <-wait.Result:
+		fmt.Println("success!")
+	}
+
+	out, err := apiClient.ContainerLogs(ctx, alpineID, client.ContainerLogsOptions{ShowStdout: true})
+	if err != nil {
+		panic(err)
+	}
+
+	stdcopy.StdCopy(os.Stdout, os.Stderr, out)
 }
