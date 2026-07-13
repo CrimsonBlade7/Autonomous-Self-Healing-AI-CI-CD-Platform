@@ -121,6 +121,7 @@ func verifyMessage(signature string, message []byte) bool {
 // Handles the extracted pull request
 func handlePullRequest(pr PullRequest) {
 	// to be implemented later
+	slog.Info(fmt.Sprintf("Valid webhook recieved: %+v", pr))
 }
 
 // Github webhook handler
