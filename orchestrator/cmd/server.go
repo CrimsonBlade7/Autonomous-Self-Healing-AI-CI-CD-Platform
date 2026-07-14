@@ -94,7 +94,7 @@ func loadEnv() {
 		slog.Error("Error loading .env file", "error", err)
 		return
 	}
-	secret = os.Getenv("SECRET")
+	secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if secret == "" {
 		slog.Error("Error: HMAC secret has not been set")
 		return
@@ -179,8 +179,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	// initialize handlers for each route
-	mux.Handle("/api/webhook", http.HandlerFunc(whHandler))
-	mux.Handle("/", http.FileServer(http.Dir(".")))
+	mux.Handle("/", http.HandlerFunc(whHandler))
 
 	// initialize the server settings
 	server := &http.Server{
