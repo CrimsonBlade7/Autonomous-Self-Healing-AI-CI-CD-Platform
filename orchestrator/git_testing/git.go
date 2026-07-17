@@ -3,62 +3,71 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
+var repoDir string = "./temp_repos"
+
+func tempRepoPath(sha string) (string, error) {
+	return os.MkdirTemp(repoDir, fmt.Sprintf("commitsha_%s_*", sha))
+}
+
 func main() {
-	// Define configuration variables
+
 	remoteURL := "https://github.com/CrimsonBlade7/CI-CD-Test.git"
 	commitSHA := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71"
-	directory := "./test_project_folder"
-
-	// Simulate 'git init' inside the target directory
-	repo, err := git.PlainOpen(directory)
+	
+	dir, err := tempRepoPath(commitSHA)
+	if err != nil {
+		log.Fatalf("Failed to create a temporary directory: %s", err)
+	}
+	repo, err := git.PlainOpen(dir)
 	if err == git.ErrRepositoryNotExists {
-		repo, err = git.PlainInit(directory, false)
+		repo, err = git.PlainInit(dir, false)
 		if err != nil {
-			log.Fatalf("Failed to initialize the repository: %v", err)
+			log.Fatalf("Failed to initialize repo: %v", err)
 		}
 		_, err = repo.CreateRemote(&config.RemoteConfig{
 			Name: "origin",
 			URLs: []string{remoteURL},
 		})
 		if err != nil {
-			log.Fatalf("Failed to add remote: %v", err)
+			log.Fatalf("Failed to create remote: %v", err)
 		}
-	} else if err != nil {
-		log.Fatalf("Failed to open the repository: %v", err)
+	} else {
+		if err != nil {
+			log.Fatalf("Failed to open repo: %v", err)
+		}
 	}
 
-	// Simulate 'git fetch origin <sha>'
-	// We pass a custom Refspec to fetch only the explicit commit hash
 	err = repo.Fetch(&git.FetchOptions{
-		RemoteName: "origin",
-		RefSpecs: []config.RefSpec{
-			config.RefSpec(fmt.Sprintf("%s:%s", commitSHA, "/refs/heads/temp-branch")),
-		},
-		Depth: 1,
+		RemoteURL: remoteURL,
+		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", commitSHA, "refs/heads/temp-branch"))},
+		Depth:     1,
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
-		log.Fatalf("Failed to fetch specific SHA: %v", err)
+		log.Fatalf("Failed to fetch commit: %v", err)
 	}
 
-	// Simulate 'git checkout <sha>'
-	w, err := repo.Worktree()
+	wt, err := repo.Worktree()
 	if err != nil {
 		log.Fatalf("Failed to get worktree: %v", err)
 	}
 
-	err = w.Checkout(&git.CheckoutOptions{
-		Hash:  plumbing.NewHash(commitSHA),
+	hash, ok := plumbing.FromHex(commitSHA)
+	if !ok {
+		log.Fatalf("Failed to hash the commitSHA")
+	}
+	err = wt.Checkout(&git.CheckoutOptions{
+		Hash:  hash,
 		Force: true,
 	})
 	if err != nil {
-		log.Fatalf("Failed to checkout SHA: %v", err)
+		log.Fatalf("Failed to checkout branch: %s", err)
 	}
-
 	fmt.Println("Successfully checked out specific SHA natively!")
 }
