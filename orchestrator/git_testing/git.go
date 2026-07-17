@@ -12,7 +12,7 @@ import (
 func main() {
 	// Define configuration variables
 	remoteURL := "https://github.com/CrimsonBlade7/CI-CD-Test.git"
-	commitSHA := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71" // Replace with your SHA
+	commitSHA := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71"
 	directory := "./test_project_folder"
 
 	// Simulate 'git init' inside the target directory
