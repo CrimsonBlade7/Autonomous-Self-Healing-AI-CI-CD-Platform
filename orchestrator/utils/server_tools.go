@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"context"
@@ -15,8 +15,6 @@ import (
 	"os/signal"
 	"strings"
 	"time"
-
-	"github.com/joho/godotenv"
 )
 
 /*
@@ -50,11 +48,6 @@ type PullRequest struct {
 	BaseSHA string `json:"basesha"`
 }
 
-var (
-	secret string
-	port   string
-)
-
 // Converts a byte slice into a PullRequest struct
 func (pr *PullRequest) UnmarshalJSON(data []byte) error {
 	var temp struct {
@@ -85,25 +78,6 @@ func (pr *PullRequest) UnmarshalJSON(data []byte) error {
 	pr.BaseSHA = temp.PullRequest.Base.Sha
 
 	return nil
-}
-
-// Loads the .env variables
-func loadEnv() {
-	err := godotenv.Load("../.env")
-	if err != nil {
-		slog.Error("Error loading .env file", "error", err)
-		return
-	}
-	secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
-	if secret == "" {
-		slog.Error("Error: HMAC secret has not been set")
-		return
-	}
-	port = os.Getenv("PORT")
-	if port == "" {
-		slog.Error("Error: Port has not been set")
-		return
-	}
 }
 
 // Generates the HMAC key based on the message and secret
@@ -167,13 +141,7 @@ func whHandler(w http.ResponseWriter, r *http.Request) {
 	go handlePullRequest(pullRequest)
 }
 
-func main() {
-
-	loadEnv()
-
-	// initialize log creator
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
+func StartServer() {
 
 	// initialize a custom multiplexer
 	mux := http.NewServeMux()

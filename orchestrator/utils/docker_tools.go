@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func reloadContainerSlice(ctx context.Context, c *client.Client) {
 	contsItems = contsRes.Items
 }
 
-func main() {
+func not_main1() {
 	var err error
 	apiClient, err := client.New(client.FromEnv)
 	if err != nil {

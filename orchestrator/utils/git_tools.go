@@ -1,4 +1,4 @@
-package main
+package utils
 
 import (
 	"errors"
@@ -57,7 +57,7 @@ func cleanBrokenRepos() error {
 	return nil
 }
 
-func main() {
+func not_main2() {
 
 	remoteURL := "https://github.com/CrimsonBlade7/CI-CD-Test.git"
 	commitSHA := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71"
