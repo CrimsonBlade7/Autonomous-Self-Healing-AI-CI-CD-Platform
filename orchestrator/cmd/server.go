@@ -1,4 +1,4 @@
-package utils
+package main
 
 import (
 	"context"
@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -39,17 +39,8 @@ import (
 	PongMessage = 10
 */
 
-type PullRequest struct {
-	Action  string `json:"action"`
-	Url     string `json:"url"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HeadSHA string `json:"headsha"`
-	BaseSHA string `json:"basesha"`
-}
-
 // Converts a byte slice into a PullRequest struct
-func (pr *PullRequest) UnmarshalJSON(data []byte) error {
+func (pr *PullRequest) unmarshalJSON(data []byte) error {
 	var temp struct {
 		Action      string `json:"action"`
 		PullRequest struct {
@@ -92,26 +83,20 @@ func verifyMessage(signature string, message []byte) bool {
 	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message)))
 }
 
-// Handles the extracted pull request
-func handlePullRequest(pr PullRequest) {
-	// to be implemented later
-	slog.Info(fmt.Sprintf("Valid webhook recieved: %+v", pr))
-}
-
 // Github webhook handler
 func whHandler(w http.ResponseWriter, r *http.Request) {
 
 	defer r.Body.Close()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		slog.Error("Cannot read body")
+		fmt.Printf("Cannot read body")
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	realSig := strings.TrimPrefix(string(r.Header.Get("X-Hub-Signature-256")), "sha256=")
+	realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
 	if !verifyMessage(realSig, body) {
-		slog.Info("Signature verification failed")
+		fmt.Printf("Signature verification failed")
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -122,34 +107,22 @@ func whHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var pullRequest PullRequest
-	pullRequest.UnmarshalJSON(body)
+	pullRequest.unmarshalJSON(body)
 
-	// testing: output the message
-	fmt.Println("Recieved message: ")
-	testPrint := "" +
-		"Action: " + pullRequest.Action + "\n" +
-		"Url: " + pullRequest.Url + "\n" +
-		"Title: " + pullRequest.Title + "\n" +
-		"Body: " + pullRequest.Body + "\n" +
-		"HeadSHA: " + pullRequest.HeadSHA + "\n" +
-		"BaseSHA:" + pullRequest.BaseSHA
-
-	fmt.Println(testPrint)
+	// testing
+	fmt.Printf("%+v\n", pullRequest)
 
 	w.WriteHeader(http.StatusOK)
 
-	go handlePullRequest(pullRequest)
+	jobQueue <- Job{pullRequest}
 }
 
-func StartServer() {
+// Starts the http server with secret s and port p
+func startServer(ctx context.Context) error {
 
-	// initialize a custom multiplexer
+	// initialize server
 	mux := http.NewServeMux()
-
-	// initialize handlers for each route
 	mux.Handle("/", http.HandlerFunc(whHandler))
-
-	// initialize the server settings
 	server := &http.Server{
 		Addr:              port,
 		Handler:           mux,               // Inject your isolated router
@@ -159,34 +132,35 @@ func StartServer() {
 		IdleTimeout:       120 * time.Second, // Max time to keep idle connections alive
 	}
 
-	// create a context to manage the server's lifetime
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	// end the context when the function returns
+	// create a context for server lifetime
+	lifetime, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
-	// asynchronously open the server and listen on it
-	// when the server ends abnormally, force exit
+	// start the server
 	go func() {
-		fmt.Printf("Server is starting on: %s\n", server.Addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			fmt.Printf("Server error: %v\n", err)
+		slog.Info("Server is starting", "port", server.Addr)
+		err := server.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("Server error", "error", err)
 			os.Exit(1)
 		}
 	}()
 
-	// block until the context recieves an os.Interrupt
-	<-ctx.Done()
+	// block until an os.Interrupt occurs
+	<-lifetime.Done()
 
-	// create a context to manage shutting down
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 30*time.Second)
-	// end the context when the function ends
+	// create a context for duration of the server shutdown
+	countdown := 30 * time.Second
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), countdown)
 	defer cancelShutdown()
 
-	// block until the shutdown responds
-	// if it does not respond or errors, the context forces it to end and it errors
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		fmt.Printf("Server forced to shutdown by: %v", err)
+	// shutting down the server
+	err := server.Shutdown(shutdownCtx)
+	if err != nil {
+		slog.Error("Server forced to shutdown", "error", err)
+		return err
 	}
 
-	fmt.Printf("Server shutdown complete!")
+	slog.Info("Server shutdown complete!")
+	return nil
 }

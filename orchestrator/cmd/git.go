@@ -1,8 +1,9 @@
-package utils
+package main
 
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -11,11 +12,9 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-var repoDir string = "./temp_repos"
-
 // Creates a unique temp directory in repoDir
 func tempRepoPath(sha string) (string, func() error, error) {
-	path, err := os.MkdirTemp(repoDir, fmt.Sprintf("commitsha_%s_*", sha))
+	path, err := os.MkdirTemp(repoDir, fmt.Sprintf("sha%s_*", sha))
 	if err != nil {
 		return "", nil, err
 	}
@@ -57,70 +56,84 @@ func cleanBrokenRepos() error {
 	return nil
 }
 
-func not_main2() {
+func initializeRepo(url, sha string) error {
 
-	remoteURL := "https://github.com/CrimsonBlade7/CI-CD-Test.git"
-	commitSHA := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71"
-
-	err := cleanBrokenRepos()
+	path, cleanup, err := tempRepoPath(sha)
 	if err != nil {
-		panic(fmt.Sprintf("Failed to clean broken repos: %v", err))
-	}
-
-	path, cleanup, err := tempRepoPath(commitSHA)
-	if err != nil {
-		panic(fmt.Sprintf("Failed to create a temporary directory: %s", err))
+		return err
 	}
 
 	repo, err := git.PlainInit(path, false)
 	if err != nil {
-		cleanup()
-		panic(fmt.Sprintf("Failed to initialize repo: %v", err))
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to initialize repo")
 	}
 	_, err = repo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
-		URLs: []string{remoteURL},
+		URLs: []string{url},
 	})
 	if err != nil {
-		cleanup()
-		panic(fmt.Sprintf("Failed to create remote: %v", err))
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to create remote")
 	}
 
 	err = repo.Fetch(&git.FetchOptions{
-		RemoteURL: remoteURL,
-		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", commitSHA, "refs/heads/temp-branch"))},
+		RemoteURL: url,
+		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", sha, "refs/heads/temp-branch"))},
 		Depth:     1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		cleanup()
-		panic(fmt.Sprintf("Failed to fetch commit: %v", err))
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to fetch commit")
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
-		cleanup()
-		panic(fmt.Sprintf("Failed to get worktree: %v", err))
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to get worktree")
 	}
 
-	hash, ok := plumbing.FromHex(commitSHA)
+	hash, ok := plumbing.FromHex(sha)
 	if !ok {
-		cleanup()
-		panic("Failed to hash the commitSHA")
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to hash the sha")
 	}
 	err = wt.Checkout(&git.CheckoutOptions{
 		Hash:  hash,
 		Force: true,
 	})
 	if err != nil {
-		cleanup()
-		panic(fmt.Sprintf("Failed to checkout branch: %s", err))
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to checkout branch")
 	}
 
 	err = createReadyFile(path)
 	if err != nil {
-		cleanup()
-		panic(fmt.Sprintf("Failed to create ready file: %v", err))
+		err = cleanup()
+		if err != nil {
+			return err
+		}
+		slog.Error("Failed to create ready file")
 	}
 
 	fmt.Println("Successfully checked out specific SHA natively!")
+	return nil
 }
