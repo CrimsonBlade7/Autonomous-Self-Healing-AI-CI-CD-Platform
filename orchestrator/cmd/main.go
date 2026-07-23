@@ -82,5 +82,6 @@ func main() {
 /*
 TODO List:
 	- fix contexts to have children
-	- ...
+	- create dockerfiles
+	- testing
 */

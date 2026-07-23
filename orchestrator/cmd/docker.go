@@ -92,7 +92,6 @@ func buildImage(ctx context.Context, cli *client.Client, tag, srcPath string) er
 
 	// TODO: Generate dockerfile
 
-	// TODO: fix tag ("/" are not allowed)
 	imageResult, err := cli.ImageBuild(ctx, pr, client.ImageBuildOptions{
 		Tags:       []string{tag},
 		Dockerfile: "Dockerfile",
