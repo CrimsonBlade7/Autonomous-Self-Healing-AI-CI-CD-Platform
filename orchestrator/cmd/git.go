@@ -56,31 +56,33 @@ func cleanBrokenRepos() error {
 	return nil
 }
 
-func initializeRepo(url, sha string) error {
+func initializeRepo(url, sha string) (string, error) {
 
 	path, cleanup, err := tempRepoPath(sha)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	repo, err := git.PlainInit(path, false)
 	if err != nil {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to initialize repo")
+		return "", err
 	}
 	_, err = repo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{url},
 	})
 	if err != nil {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to create remote")
+		return "", err
 	}
 
 	err = repo.Fetch(&git.FetchOptions{
@@ -89,51 +91,56 @@ func initializeRepo(url, sha string) error {
 		Depth:     1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to fetch commit")
+		return "", err
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to get worktree")
+		return "", err
 	}
 
 	hash, ok := plumbing.FromHex(sha)
 	if !ok {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to hash the sha")
+		return "", err
 	}
 	err = wt.Checkout(&git.CheckoutOptions{
 		Hash:  hash,
 		Force: true,
 	})
 	if err != nil {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to checkout branch")
+		return "", err
 	}
 
 	err = createReadyFile(path)
 	if err != nil {
-		err = cleanup()
-		if err != nil {
-			return err
+		cleanupErr := cleanup()
+		if cleanupErr != nil {
+			return "", cleanupErr
 		}
 		slog.Error("Failed to create ready file")
+		return "", err
 	}
 
 	fmt.Println("Successfully checked out specific SHA natively!")
-	return nil
+	return path, nil
 }

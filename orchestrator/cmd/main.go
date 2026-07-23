@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	_ "fmt"
 	"log/slog"
 	"os"
@@ -10,28 +11,39 @@ import (
 	"github.com/moby/moby/client"
 )
 
+var repoDir string = "./temp_repos"
+
+// The Job struct exists in case new fields need to be added
+type Job struct {
+	PullReq PullRequest
+}
+
 // Loads the .env variables
-func loadEnv() error {
+func loadEnv(secret, port *string) error {
 	err := godotenv.Load()
 	if err != nil {
 		return err
 	}
-	secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
-	if secret == "" {
-		return err
+	*secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
+	if *secret == "" {
+		return errors.New("Secret is empty")
 	}
-	port = os.Getenv("PORT")
-	if port == "" {
-		return err
+	*port = os.Getenv("PORT")
+	if *port == "" {
+		return errors.New("Port is empty")
 	}
 	return nil
 }
 
 func main() {
+	var secret string
+	var port string
+	jobs := make(chan Job)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
+	mainCtx := context.Background()
 
-	err := loadEnv()
+	err := loadEnv(&secret, &port)
 	if err != nil {
 		slog.Error("Failed to load .env variables", "error", err)
 		return
@@ -43,25 +55,28 @@ func main() {
 		return
 	}
 
-	mobyClient, err = client.New(client.FromEnv)
+	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		slog.Error("Failed to start moby client", "error", err)
 		return
 	}
-	defer mobyClient.Close()
+	defer cli.Close()
 
-	mainCtx := context.Background()
-	err = startJobPipeline(mainCtx)
+	err = cleanOldImages(mainCtx, cli)
 	if err != nil {
-		slog.Error("Failed to start job pipeline", "error", err)
+		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
-	err = startServer(mainCtx)
-	if err != nil {
-		slog.Error("Server failure", "error", err)
-		return
-	}
+	go startJobPipeline(mainCtx, cli, jobs)
+
+	go func() {
+		err = startServer(mainCtx, secret, port, jobs)
+		if err != nil {
+			slog.Error("Server failure", "error", err)
+			return
+		}
+	}()
 }
 
 /*

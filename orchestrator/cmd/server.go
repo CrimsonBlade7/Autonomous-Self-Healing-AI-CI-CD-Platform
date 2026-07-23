@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log/slog"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -39,6 +39,15 @@ import (
 	PongMessage = 10
 */
 
+type PullRequest struct {
+	Action  string `json:"action"`
+	Url     string `json:"url"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	HeadSHA string `json:"headsha"`
+	BaseSHA string `json:"basesha"`
+}
+
 // Converts a byte slice into a PullRequest struct
 func (pr *PullRequest) unmarshalJSON(data []byte) error {
 	var temp struct {
@@ -58,7 +67,7 @@ func (pr *PullRequest) unmarshalJSON(data []byte) error {
 
 	err := json.Unmarshal(data, &temp)
 	if err != nil {
-		return errors.New("Couldn't unmarshal the json webhook")
+		return err
 	}
 
 	pr.Action = temp.Action
@@ -72,57 +81,64 @@ func (pr *PullRequest) unmarshalJSON(data []byte) error {
 }
 
 // Generates the HMAC key based on the message and secret
-func GenerateHMAC(message []byte) string {
+func GenerateHMAC(message []byte, secret string) string {
 	hash := hmac.New(sha256.New, []byte(secret))
 	hash.Write(message)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // Verifies if the message is legitimate
-func verifyMessage(signature string, message []byte) bool {
-	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message)))
+func verifyMessage(message []byte, signature, secret string) bool {
+	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message, secret)))
 }
 
 // Github webhook handler
-func whHandler(w http.ResponseWriter, r *http.Request) {
+func whHandler(secret string, jobs chan Job) http.HandlerFunc {
 
-	defer r.Body.Close()
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		fmt.Printf("Cannot read body")
-		w.WriteHeader(http.StatusBadRequest)
-		return
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			slog.Error("Failed to read request body", "error", err)
+			return
+		}
+
+		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
+		if !verifyMessage(body, realSig, secret) {
+			w.WriteHeader(http.StatusUnauthorized)
+			slog.Warn("Unauthorized request", "warn", err)
+			return
+		}
+
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		var pullRequest PullRequest
+		err = pullRequest.unmarshalJSON(body)
+		if err != nil {
+			slog.Error("Failed to unmsarhsal the json", "error", err)
+			return
+		}
+
+		// testing
+		fmt.Printf("%+v\n", pullRequest)
+
+		w.WriteHeader(http.StatusOK)
+
+		jobs <- Job{pullRequest}
 	}
-
-	realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
-	if !verifyMessage(realSig, body) {
-		fmt.Printf("Signature verification failed")
-		w.WriteHeader(http.StatusUnauthorized)
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-
-	var pullRequest PullRequest
-	pullRequest.unmarshalJSON(body)
-
-	// testing
-	fmt.Printf("%+v\n", pullRequest)
-
-	w.WriteHeader(http.StatusOK)
-
-	jobQueue <- Job{pullRequest}
 }
 
 // Starts the http server with secret s and port p
-func startServer(ctx context.Context) error {
+func startServer(ctx context.Context, secret, port string, jobs chan Job) error {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler))
+	mux.Handle("/", http.HandlerFunc(whHandler(secret, jobs)))
 	server := &http.Server{
 		Addr:              port,
 		Handler:           mux,               // Inject your isolated router

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	_ "log/slog"
 	"os"
 	"path/filepath"
 
@@ -14,8 +13,23 @@ import (
 	"github.com/moby/moby/client"
 )
 
+// Cleans up old images
+func cleanOldImages(ctx context.Context, cli *client.Client) error {
+	images, err := cli.ImageList(ctx, client.ImageListOptions{All: true})
+	if err != nil {
+		return err
+	}
+	for _, item := range images.Items {
+		_, err = cli.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Builds an image from src
-func buildImage(ctx context.Context, src string) error {
+func buildImage(ctx context.Context, cli *client.Client, tag, srcPath string) error {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
@@ -23,12 +37,12 @@ func buildImage(ctx context.Context, src string) error {
 		tw := tar.NewWriter(pw)
 		defer tw.Close()
 
-		err := filepath.WalkDir(src, func(path string, d os.DirEntry, err error) error {
+		err := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
 
-			relPath, err := filepath.Rel(src, path)
+			relPath, err := filepath.Rel(srcPath, path)
 			if err != nil {
 				return err
 			}
@@ -57,7 +71,7 @@ func buildImage(ctx context.Context, src string) error {
 			if d.Type().IsRegular() {
 				file, err := os.Open(path)
 				if err != nil {
-					return nil
+					return err
 				}
 				defer file.Close()
 				_, err = io.Copy(tw, file)
@@ -69,11 +83,18 @@ func buildImage(ctx context.Context, src string) error {
 			return nil
 		})
 
-		_ = pw.CloseWithError(err)
+		err = pw.CloseWithError(err)
+		if err != nil {
+			slog.Error("Pipe writter failed to close", "error", err)
+			return
+		}
 	}()
 
-	imageResult, err := mobyClient.ImageBuild(ctx, pr, client.ImageBuildOptions{
-		Tags:       []string{src},
+	// TODO: Generate dockerfile
+
+	// TODO: fix tag ("/" are not allowed)
+	imageResult, err := cli.ImageBuild(ctx, pr, client.ImageBuildOptions{
+		Tags:       []string{tag},
 		Dockerfile: "Dockerfile",
 	})
 	if err != nil {
@@ -81,6 +102,8 @@ func buildImage(ctx context.Context, src string) error {
 	}
 	defer imageResult.Body.Close()
 
+	// TODO: temp for testing
+	// imageResult.Body needs to be drained when complete
 	_, err = io.Copy(os.Stdout, imageResult.Body)
 	if err != nil {
 		return err
@@ -89,45 +112,43 @@ func buildImage(ctx context.Context, src string) error {
 	return nil
 }
 
-func buildContainer(ctx context.Context, src string) error {
+func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 
-	cont, err := mobyClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{
-			Cmd: []string{ /*initial command*/ },
-		},
-		Name:  src,
-		Image: src,
+	cont, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{},
+		Name:   tag,
+		Image:  tag,
 	})
 	if err != nil {
 		return err
 	}
 
 	defer func() {
-		_, err = mobyClient.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{
+		_, err = cli.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{
 			RemoveVolumes: true,
 		})
 		if err != nil {
-			panic(err)
+			slog.Error("Failed to remove container", "error", err)
+			return
 		}
 	}()
 
-	_, err = mobyClient.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
+	_, err = cli.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
 		return err
 	}
 
-	response := mobyClient.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
+	response := cli.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
 	select {
 	case <-response.Result:
 		slog.Info("Container completed")
-	case err = <- response.Error:
+	case err = <-response.Error:
 		slog.Error("Container completed", "error", err)
 	}
 
-	logs, err := mobyClient.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
+	logs, err := cli.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true,
 	})
 	if err != nil {
 		return err
