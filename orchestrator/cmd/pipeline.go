@@ -7,6 +7,8 @@ import (
 	"github.com/moby/moby/client"
 )
 
+// Starts the job pipeline
+// Handles incoming jobs
 func startJobPipeline(ctx context.Context, cli *client.Client, jobs chan Job) {
 	for {
 		select {

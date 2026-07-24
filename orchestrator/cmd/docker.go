@@ -19,12 +19,12 @@ import (
 func cleanOldImages(ctx context.Context, cli *client.Client) error {
 	images, err := cli.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to fetch image list: %w", err)
 	}
 	for _, item := range images.Items {
 		_, err = cli.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
 		if err != nil {
-			return err
+			return fmt.Errorf("Failed to remove image: %w", err)
 		}
 	}
 	return nil
@@ -40,13 +40,9 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 		defer tw.Close()
 
 		err := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
-
 			relPath, err := filepath.Rel(srcPath, path)
 			if err != nil {
-				return err
+				return fmt.Errorf("Failed create relative path: %w", err)
 			}
 
 			// Skip root
@@ -56,29 +52,29 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 
 			fi, err := d.Info()
 			if err != nil {
-				return fmt.Errorf("failed to get info for %s: %w", path, err)
+				return fmt.Errorf("Failed to get info for %s: %w", path, err)
 			}
 
 			header, err := tar.FileInfoHeader(fi, d.Name())
 			if err != nil {
-				return err
+				return fmt.Errorf("Failed to create file info header: %w", err)
 			}
 			header.Name = filepath.ToSlash(relPath)
 
 			err = tw.WriteHeader(header)
 			if err != nil {
-				return err
+				return fmt.Errorf("Failed to write header: %w", err)
 			}
 
 			if d.Type().IsRegular() {
 				file, err := os.Open(path)
 				if err != nil {
-					return err
+					return fmt.Errorf("Failed to open file %s: %w", path, err)
 				}
 				defer file.Close()
 				_, err = io.Copy(tw, file)
 				if err != nil {
-					return err
+					return fmt.Errorf("Failed to write file contents to tar writer: %w", err)
 				}
 			}
 
@@ -93,13 +89,13 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 	}()
 
 	// TODO: Malformed image docker file will not send an error; rather it is inside imageResult
-	
+
 	imageResult, err := cli.ImageBuild(ctx, pr, client.ImageBuildOptions{
 		Tags:       []string{fmt.Sprintf("%s:%s", repoName, sha)},
 		Dockerfile: "Dockerfile",
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to build image: %w", err)
 	}
 	defer imageResult.Body.Close()
 
@@ -107,7 +103,7 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 	// imageResult.Body needs to be drained when complete
 	_, err = io.Copy(os.Stdout, imageResult.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to print body: %w", err)
 	}
 
 	return nil
@@ -123,7 +119,7 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 		Image: tag,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
 
 	defer func() {
@@ -142,7 +138,7 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 		Follow:     true,
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to create a container logger: %w", err)
 	}
 
 	stdoutReader, stdoutWriter := io.Pipe()
@@ -156,7 +152,6 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 		_, err = stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
 		if err != nil {
 			slog.Error("Failed reading logs", "error", err)
-			// TODO: handle errors properly
 			return
 		}
 	}()
@@ -189,7 +184,7 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 
 	_, err = cli.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to start container: %w", err)
 	}
 
 	response := cli.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
@@ -202,7 +197,7 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 
 	bytes, err := io.ReadAll(logs)
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to read logs: %w", err)
 	}
 
 	slog.Info("Container Logs", slog.String("logs", string(bytes)))

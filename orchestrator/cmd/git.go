@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -69,8 +68,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to initialize repo")
-		return "", err
+		return "", fmt.Errorf("Failed to initialize repo: %w", err)
 	}
 	_, err = repo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
@@ -81,8 +79,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to create remote")
-		return "", err
+		return "", fmt.Errorf("Failed to create remote: %w", err)
 	}
 
 	err = repo.Fetch(&git.FetchOptions{
@@ -95,8 +92,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to fetch commit")
-		return "", err
+		return "", fmt.Errorf("Failed to fetch commit: %w", err)
 	}
 
 	wt, err := repo.Worktree()
@@ -105,8 +101,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to get worktree")
-		return "", err
+		return "", fmt.Errorf("Failed to get worktree: %w", err)
 	}
 
 	hash, ok := plumbing.FromHex(sha)
@@ -115,8 +110,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to hash the sha")
-		return "", err
+		return "", fmt.Errorf("Failed to hash the sha: %w", err)
 	}
 	err = wt.Checkout(&git.CheckoutOptions{
 		Hash:  hash,
@@ -127,8 +121,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to checkout branch")
-		return "", err
+		return "", fmt.Errorf("Failed to checkout branch: %w", err)
 	}
 
 	err = createReadyFile(path)
@@ -137,8 +130,7 @@ func initializeRepo(url, sha string) (string, error) {
 		if cleanupErr != nil {
 			return "", cleanupErr
 		}
-		slog.Error("Failed to create ready file")
-		return "", err
+		return "", fmt.Errorf("Failed to create ready file: %w", err)
 	}
 
 	fmt.Println("Successfully checked out specific SHA natively!")
