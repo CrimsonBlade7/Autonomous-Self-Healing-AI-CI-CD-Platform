@@ -40,6 +40,7 @@ import (
 */
 
 type PullRequest struct {
+	Name    string `json:"name"`
 	Action  string `json:"action"`
 	Url     string `json:"url"`
 	Title   string `json:"title"`
@@ -51,6 +52,9 @@ type PullRequest struct {
 // Converts a byte slice into a PullRequest struct
 func (pr *PullRequest) unmarshalJSON(data []byte) error {
 	var temp struct {
+		Repository struct {
+			Name string `json:"name"`
+		} `json:"repository"`
 		Action      string `json:"action"`
 		PullRequest struct {
 			Url   string `json:"url"`
@@ -70,6 +74,7 @@ func (pr *PullRequest) unmarshalJSON(data []byte) error {
 		return err
 	}
 
+	pr.Name = temp.Repository.Name
 	pr.Action = temp.Action
 	pr.Url = temp.PullRequest.Url
 	pr.Title = temp.PullRequest.Title

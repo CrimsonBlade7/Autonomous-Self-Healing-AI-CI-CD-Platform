@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -29,7 +31,7 @@ func cleanOldImages(ctx context.Context, cli *client.Client) error {
 }
 
 // Builds an image from src
-func buildImage(ctx context.Context, cli *client.Client, tag, srcPath string) error {
+func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath string) error {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
@@ -90,10 +92,10 @@ func buildImage(ctx context.Context, cli *client.Client, tag, srcPath string) er
 		}
 	}()
 
-	// TODO: Generate dockerfile
-
+	// TODO: Malformed image docker file will not send an error; rather it is inside imageResult
+	
 	imageResult, err := cli.ImageBuild(ctx, pr, client.ImageBuildOptions{
-		Tags:       []string{tag},
+		Tags:       []string{fmt.Sprintf("%s:%s", repoName, sha)},
 		Dockerfile: "Dockerfile",
 	})
 	if err != nil {
@@ -114,9 +116,11 @@ func buildImage(ctx context.Context, cli *client.Client, tag, srcPath string) er
 func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 
 	cont, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config: &container.Config{},
-		Name:   tag,
-		Image:  tag,
+		HostConfig: &container.HostConfig{
+			AutoRemove: true,
+		},
+		Name:  tag,
+		Image: tag,
 	})
 	if err != nil {
 		return err
@@ -132,6 +136,57 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 		}
 	}()
 
+	logs, err := cli.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	})
+	if err != nil {
+		return err
+	}
+
+	stdoutReader, stdoutWriter := io.Pipe()
+	stderrReader, stderrWriter := io.Pipe()
+
+	go func() {
+		defer logs.Close()
+		defer stdoutWriter.Close()
+		defer stderrWriter.Close()
+
+		_, err = stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
+		if err != nil {
+			slog.Error("Failed reading logs", "error", err)
+			// TODO: handle errors properly
+			return
+		}
+	}()
+
+	go func() {
+		defer stdoutReader.Close()
+		scanner := bufio.NewScanner(stdoutReader)
+		for scanner.Scan() {
+			slog.Info(scanner.Text(), "container_id", cont.ID)
+		}
+		err = scanner.Err()
+		if err != nil {
+			slog.Error("Failed to scan the logs", "error", err)
+			return
+		}
+	}()
+
+	go func() {
+		defer stderrReader.Close()
+		scanner := bufio.NewScanner(stderrReader)
+		for scanner.Scan() {
+			slog.Error(scanner.Text(), "container_id", cont.ID)
+		}
+		err = scanner.Err()
+		if err != nil {
+			slog.Error("Failed to scan the logs", "error", err)
+			return
+		}
+	}()
+
 	_, err = cli.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
 		return err
@@ -142,17 +197,8 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 	case <-response.Result:
 		slog.Info("Container completed")
 	case err = <-response.Error:
-		slog.Error("Container completed", "error", err)
+		slog.Error("Container error", "error", err)
 	}
-
-	logs, err := cli.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-	})
-	if err != nil {
-		return err
-	}
-	defer logs.Close()
 
 	bytes, err := io.ReadAll(logs)
 	if err != nil {

@@ -18,12 +18,12 @@ func startJobPipeline(ctx context.Context, cli *client.Client, jobs chan Job) {
 				slog.Error("Failed to initialize the repository", "error", err)
 				continue
 			}
-			err = buildImage(ctx, cli, job.PullReq.HeadSHA, path)
+			err = buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path)
 			if err != nil {
 				slog.Error("Failed to build image", "error", err)
 				continue
 			}
-			err = runContainer(ctx, cli, path)
+			err = runContainer(ctx, cli, job.PullReq.HeadSHA)
 			if err != nil {
 				slog.Error("Failed to build container", "error", err)
 				continue

@@ -82,6 +82,8 @@ func main() {
 /*
 TODO List:
 	- fix contexts to have children
-	- create dockerfiles
 	- testing
+	- remove images and containers on success, keep of failure for inspection
+	- create an error channel
+	- slog on every error to track errors better?
 */
