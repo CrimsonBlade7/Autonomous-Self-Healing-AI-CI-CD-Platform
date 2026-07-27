@@ -77,9 +77,9 @@ func main() {
 
 /*
 TODO List:
-	- fix contexts to have children
 	- testing
 		- interfaces for swapping out tests
+		- add tests for the rest of the functions other than pr
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
 	- handle "fetch by sha" disabled
