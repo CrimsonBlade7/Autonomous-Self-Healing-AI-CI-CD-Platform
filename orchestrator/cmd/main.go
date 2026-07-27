@@ -82,6 +82,5 @@ TODO List:
 		- add tests for the rest of the functions other than pr
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
-	- handle "fetch by sha" disabled
-		- consider fast moving branches where commits are pushed after the webhook fires
+	- consider fast moving branches where commits are pushed after the webhook fires when handling "fetch by ref"
 */

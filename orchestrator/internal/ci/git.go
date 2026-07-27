@@ -120,7 +120,7 @@ func initializeRepo(ctx context.Context, dest string, pr types.PullRequest) (str
 	})
 	if err != nil {
 		err = cleanup()
-		return "", fmt.Errorf("Failed to checkout branch: %w", err)
+		return "", fmt.Errorf("Failed to checkout: %w", err)
 	}
 
 	err = createReadyFile(path)
