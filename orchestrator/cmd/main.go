@@ -6,10 +6,10 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/ci"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
 	"github.com/joho/godotenv"
 	"github.com/moby/moby/client"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/ci"
 )
 
 var repoDir string = "./temp_repos"
@@ -83,4 +83,5 @@ TODO List:
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
 	- handle "fetch by sha" disabled
+		- consider fast moving branches where commits are pushed after the webhook fires
 */

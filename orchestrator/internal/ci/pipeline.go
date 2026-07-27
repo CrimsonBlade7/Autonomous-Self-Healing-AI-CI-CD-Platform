@@ -4,20 +4,19 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/moby/moby/client"
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-
+	"github.com/moby/moby/client"
 )
 
-// Starts the job pipeline
-// Handles incoming jobs
+// Starts the job pipeline.
+// Handles incoming jobs.
 func StartJobPipeline(ctx context.Context, repoDir string, cli *client.Client, jobs chan types.Job) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case job := <-jobs:
-			path, err := initializeRepo(repoDir, job.PullReq.Url, job.PullReq.HeadSHA)
+			path, err := initializeRepo(ctx, repoDir, job.PullReq)
 			if err != nil {
 				slog.Error("Failed to initialize the repository", "error", err)
 				continue

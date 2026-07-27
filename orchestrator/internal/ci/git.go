@@ -1,12 +1,14 @@
 package ci
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
 	"github.com/go-git/go-git/v6"
 	"github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
@@ -19,7 +21,11 @@ func tempRepoPath(path, sha string) (string, func() error, error) {
 		return "", nil, err
 	}
 	cleanup := func() error {
-		return os.RemoveAll(path)
+		cleanupErr := os.RemoveAll(path)
+		if cleanupErr != nil {
+			return fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
+		}
+		return nil
 	}
 	return path, cleanup, nil
 }
@@ -56,63 +62,56 @@ func CleanBrokenRepos(path string) error {
 	return nil
 }
 
-// Initializes the repository and clones it into path (which should be temp_repos)
+// Initializes the repository and clones it into dest (which should be temp_repos)
 // TODO: handle "fetch by sha" disabled
-func initializeRepo(path, url, sha string) (string, error) {
+func initializeRepo(ctx context.Context, dest string, pr types.PullRequest) (string, error) {
 
-	path, cleanup, err := tempRepoPath(path, sha)
+	path, cleanup, err := tempRepoPath(dest, pr.HeadSHA)
 	if err != nil {
 		return "", fmt.Errorf("Failed to make a temporary directory: %w", err)
 	}
 
 	repo, err := git.PlainInit(path, false)
 	if err != nil {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
-		}
-		return "", fmt.Errorf("Failed to initialize repo %s at %s: %w", url, sha, err)
+		err = cleanup()
+		return "", fmt.Errorf("Failed to initialize repo %s at %s: %w", pr.Url, pr.HeadSHA, err)
 	}
 	_, err = repo.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
-		URLs: []string{url},
+		URLs: []string{pr.Url},
 	})
 	if err != nil {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
-		}
-		return "", fmt.Errorf("Failed to create remote %s at %s: %w", url, sha, err)
+		err = cleanup()
+		return "", fmt.Errorf("Failed to create remote %s at %s: %w", pr.Url, pr.HeadSHA, err)
 	}
 
-	err = repo.Fetch(&git.FetchOptions{
-		RemoteURL: url,
-		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", sha, "refs/heads/temp-branch"))},
+	// fetch specific sha
+	err = repo.FetchContext(ctx, &git.FetchOptions{
+		RemoteURL: pr.Url,
+		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
 		Depth:     1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
+		// attempt to fetch branch - for when "fetch by sha" is disabled
+		err = repo.FetchContext(ctx, &git.FetchOptions{
+			RemoteURL: pr.Url,
+			RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/temp-branch", pr.Branch))},
+		})
+		if err != nil {
+			err = cleanup()
 		}
-		return "", fmt.Errorf("Failed to fetch commit %s at %s: %w", url, sha, err)
+		return "", fmt.Errorf("Failed to fetch commit %s at %s: %w", pr.Url, pr.HeadSHA, err)
 	}
 
 	wt, err := repo.Worktree()
 	if err != nil {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
-		}
+		err = cleanup()
 		return "", fmt.Errorf("Failed to get worktree: %w", err)
 	}
 
-	hash, ok := plumbing.FromHex(sha)
+	hash, ok := plumbing.FromHex(pr.HeadSHA)
 	if !ok {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
-		}
+		err = cleanup()
 		return "", fmt.Errorf("Failed to hash the sha: %w", err)
 	}
 	err = wt.Checkout(&git.CheckoutOptions{
@@ -120,19 +119,13 @@ func initializeRepo(path, url, sha string) (string, error) {
 		Force: true,
 	})
 	if err != nil {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
-		}
+		err = cleanup()
 		return "", fmt.Errorf("Failed to checkout branch: %w", err)
 	}
 
 	err = createReadyFile(path)
 	if err != nil {
-		cleanupErr := cleanup()
-		if cleanupErr != nil {
-			return "", fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
-		}
+		err = cleanup()
 		return "", fmt.Errorf("Failed to create ready file: %w", err)
 	}
 

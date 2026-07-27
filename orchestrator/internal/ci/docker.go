@@ -30,7 +30,7 @@ func CleanOldImages(ctx context.Context, cli *client.Client) error {
 	return nil
 }
 
-// Builds an image from src
+// Builds an image from src with sha as the tag.
 func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath string) error {
 
 	pr, pw := io.Pipe()
@@ -88,8 +88,6 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 		}
 	}()
 
-	// TODO: Malformed image docker file will not send an error; rather it is inside imageResult
-
 	imageResult, err := cli.ImageBuild(ctx, pr, client.ImageBuildOptions{
 		Tags:       []string{fmt.Sprintf("%s:%s", repoName, sha)},
 		Dockerfile: "Dockerfile",
@@ -109,7 +107,7 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 	return nil
 }
 
-// Builds and runs a container labeled with tag
+// Builds and runs a container labeled with tag.
 func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 
 	cont, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
