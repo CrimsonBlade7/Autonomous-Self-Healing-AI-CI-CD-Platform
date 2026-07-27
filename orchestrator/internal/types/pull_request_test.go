@@ -1,17 +1,16 @@
-package ci
+package types
 
 import (
 	_ "embed"
 	_ "encoding/json"
+	"fmt"
 	"testing"
-
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
 )
 
-//go:embed testdata/pr_opened.json
+//go:embed test_prs/pr_opened.json
 var prOpenedPayload []byte
 
-//go:embed testdata/fake_pr.json
+//go:embed test_prs/fake_pr.json
 var missingFieldsPayload []byte
 
 func TestPullRequest_unmarshalJSON(t *testing.T) {
@@ -19,14 +18,14 @@ func TestPullRequest_unmarshalJSON(t *testing.T) {
 		name     string
 		data     []byte
 		wantErr  bool
-		expected types.PullRequest
+		expected PullRequest
 	}{
 		{
 			name:    "Standard opened PR event",
 			data:    prOpenedPayload,
 			wantErr: false,
-			expected: types.PullRequest{
-				Name:    "hello-world",
+			expected: PullRequest{
+				Name:    "Hello-World",
 				Action:  "opened",
 				Url:     "https://github.com/octocat/Hello-World.git",
 				Branch:  "feature/retry-logic",
@@ -40,12 +39,12 @@ func TestPullRequest_unmarshalJSON(t *testing.T) {
 			name:    "Empty fields",
 			data:    missingFieldsPayload,
 			wantErr: true,
-			expected: types.PullRequest{},
+			expected: PullRequest{},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var pr types.PullRequest
+			var pr PullRequest
 			gotErr := pr.UnmarshalJSON(test.data)
 			if test.wantErr {
 				if gotErr == nil {
@@ -60,7 +59,8 @@ func TestPullRequest_unmarshalJSON(t *testing.T) {
 					if pr == test.expected {
 						// pass
 					} else {
-						t.Errorf("%s: Result does not match expected value", test.name)
+						fmt.Printf("%+v", pr)
+						t.Errorf("%s: Result does not match expected value\nExpected: %+v\nActual: %+v", test.name, pr, test.expected)
 					}
 				}
 			}
