@@ -1,25 +1,30 @@
-package main
+package ci
 
 import (
 	"context"
 	"log/slog"
 
 	"github.com/moby/moby/client"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+
 )
 
 // Starts the job pipeline
 // Handles incoming jobs
-func startJobPipeline(ctx context.Context, cli *client.Client, jobs chan Job) {
+func StartJobPipeline(ctx context.Context, repoDir string, cli *client.Client, jobs chan types.Job) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case job := <-jobs:
-			path, err := initializeRepo(job.PullReq.Url, job.PullReq.HeadSHA)
+			path, err := initializeRepo(repoDir, job.PullReq.Url, job.PullReq.HeadSHA)
 			if err != nil {
 				slog.Error("Failed to initialize the repository", "error", err)
 				continue
 			}
+
+			// TODO: insert tests from rag pipeline
+
 			err = buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path)
 			if err != nil {
 				slog.Error("Failed to build image", "error", err)

@@ -1,4 +1,4 @@
-package main
+package ci
 
 import (
 	"archive/tar"
@@ -16,7 +16,7 @@ import (
 )
 
 // Cleans up old images
-func cleanOldImages(ctx context.Context, cli *client.Client) error {
+func CleanOldImages(ctx context.Context, cli *client.Client) error {
 	images, err := cli.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
@@ -24,7 +24,7 @@ func cleanOldImages(ctx context.Context, cli *client.Client) error {
 	for _, item := range images.Items {
 		_, err = cli.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
 		if err != nil {
-			return fmt.Errorf("Failed to remove image: %w", err)
+			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
 	}
 	return nil
@@ -42,7 +42,7 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 		err := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
 			relPath, err := filepath.Rel(srcPath, path)
 			if err != nil {
-				return fmt.Errorf("Failed create relative path: %w", err)
+				return fmt.Errorf("Failed create relative path %s/%s: %w", srcPath, path, err)
 			}
 
 			// Skip root
@@ -109,6 +109,7 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 	return nil
 }
 
+// Builds and runs a container labeled with tag
 func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 
 	cont, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{

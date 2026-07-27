@@ -2,35 +2,31 @@ package main
 
 import (
 	"context"
-	"errors"
-	_ "fmt"
+	"fmt"
 	"log/slog"
 	"os"
 
 	"github.com/joho/godotenv"
 	"github.com/moby/moby/client"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/ci"
 )
 
 var repoDir string = "./temp_repos"
-
-// The Job struct exists in case new fields need to be added
-type Job struct {
-	PullReq PullRequest
-}
 
 // Loads the .env variables
 func loadEnv(secret, port *string) error {
 	err := godotenv.Load()
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to load .env file: %w", err)
 	}
 	*secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if *secret == "" {
-		return errors.New("Secret is empty")
+		return fmt.Errorf("Secret is empty")
 	}
 	*port = os.Getenv("PORT")
 	if *port == "" {
-		return errors.New("Port is empty")
+		return fmt.Errorf("Port is empty")
 	}
 	return nil
 }
@@ -38,7 +34,7 @@ func loadEnv(secret, port *string) error {
 func main() {
 	var secret string
 	var port string
-	jobs := make(chan Job)
+	jobs := make(chan types.Job)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
@@ -49,7 +45,7 @@ func main() {
 		return
 	}
 
-	err = cleanBrokenRepos()
+	err = ci.CleanBrokenRepos(repoDir)
 	if err != nil {
 		slog.Error("Failed to clean broken repos", "error", err)
 		return
@@ -62,16 +58,16 @@ func main() {
 	}
 	defer cli.Close()
 
-	err = cleanOldImages(mainCtx, cli)
+	err = ci.CleanOldImages(mainCtx, cli)
 	if err != nil {
 		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
-	go startJobPipeline(mainCtx, cli, jobs)
+	go ci.StartJobPipeline(mainCtx, repoDir, cli, jobs)
 
 	go func() {
-		err = startServer(mainCtx, secret, port, jobs)
+		err = ci.StartServer(mainCtx, secret, port, jobs)
 		if err != nil {
 			slog.Error("Server failure", "error", err)
 			return
@@ -83,7 +79,8 @@ func main() {
 TODO List:
 	- fix contexts to have children
 	- testing
+		- interfaces for swapping out tests
 	- remove images and containers on success, keep of failure for inspection
-	- create an error channel
-	- add more information to fmt.Errorf
+	- create an error channel?
+	- handle "fetch by sha" disabled
 */

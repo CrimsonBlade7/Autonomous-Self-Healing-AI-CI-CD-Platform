@@ -1,11 +1,10 @@
-package main
+package ci
 
 import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +14,8 @@ import (
 	"os/signal"
 	"strings"
 	"time"
+
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
 )
 
 /*
@@ -39,52 +40,6 @@ import (
 	PongMessage = 10
 */
 
-type PullRequest struct {
-	Name    string `json:"name"`
-	Action  string `json:"action"`
-	Url     string `json:"url"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HeadSHA string `json:"headsha"`
-	BaseSHA string `json:"basesha"`
-}
-
-// Converts a byte slice into a PullRequest struct
-func (pr *PullRequest) unmarshalJSON(data []byte) error {
-	var temp struct {
-		Repository struct {
-			Name string `json:"name"`
-		} `json:"repository"`
-		Action      string `json:"action"`
-		PullRequest struct {
-			Url   string `json:"url"`
-			Title string `json:"title"`
-			Body  string `json:"body"`
-			Head  struct {
-				Sha string `json:"sha"`
-			} `json:"head"`
-			Base struct {
-				Sha string `json:"sha"`
-			} `json:"base"`
-		} `json:"pull_request"`
-	}
-
-	err := json.Unmarshal(data, &temp)
-	if err != nil {
-		return err
-	}
-
-	pr.Name = temp.Repository.Name
-	pr.Action = temp.Action
-	pr.Url = temp.PullRequest.Url
-	pr.Title = temp.PullRequest.Title
-	pr.Body = temp.PullRequest.Body
-	pr.HeadSHA = temp.PullRequest.Head.Sha
-	pr.BaseSHA = temp.PullRequest.Base.Sha
-
-	return nil
-}
-
 // Generates the HMAC key based on the message and secret
 func GenerateHMAC(message []byte, secret string) string {
 	hash := hmac.New(sha256.New, []byte(secret))
@@ -98,7 +53,7 @@ func verifyMessage(message []byte, signature, secret string) bool {
 }
 
 // Github webhook handler
-func whHandler(secret string, jobs chan Job) http.HandlerFunc {
+func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -122,24 +77,24 @@ func whHandler(secret string, jobs chan Job) http.HandlerFunc {
 			return
 		}
 
-		var pullRequest PullRequest
-		err = pullRequest.unmarshalJSON(body)
+		var pullRequest types.PullRequest
+		err = pullRequest.UnmarshalJSON(body)
 		if err != nil {
 			slog.Error("Failed to unmsarhsal the json", "error", err)
 			return
 		}
 
-		// testing
+		// TODO: testing
 		fmt.Printf("%+v\n", pullRequest)
 
-		w.WriteHeader(http.StatusOK)
-
-		jobs <- Job{pullRequest}
+		jobs <- types.Job{
+			PullReq: pullRequest,
+		}
 	}
 }
 
 // Starts the http server with secret s and port p
-func startServer(ctx context.Context, secret, port string, jobs chan Job) error {
+func StartServer(ctx context.Context, secret, port string, jobs chan types.Job) error {
 
 	// initialize server
 	mux := http.NewServeMux()
@@ -172,7 +127,7 @@ func startServer(ctx context.Context, secret, port string, jobs chan Job) error 
 
 	// create a context for duration of the server shutdown
 	countdown := 30 * time.Second
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), countdown)
+	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, countdown)
 	defer cancelShutdown()
 
 	// shutting down the server
