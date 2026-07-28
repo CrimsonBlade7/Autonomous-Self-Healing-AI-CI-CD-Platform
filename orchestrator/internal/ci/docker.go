@@ -97,9 +97,9 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 	}
 	defer imageResult.Body.Close()
 
-	// TODO: temp for testing
-	// imageResult.Body needs to be drained when complete
-	_, err = io.Copy(os.Stdout, imageResult.Body)
+	// TODO: imageResult.Body needs to be drained when complete
+	// imageResults is discarded for now
+	_, err = io.Copy(io.Discard, imageResult.Body)
 	if err != nil {
 		return fmt.Errorf("Failed to print body: %w", err)
 	}

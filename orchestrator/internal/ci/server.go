@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -84,8 +83,7 @@ func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 			return
 		}
 
-		// TODO: testing
-		fmt.Printf("%+v\n", pullRequest)
+		slog.Info("Job recieved", "pull request", pullRequest)
 
 		jobs <- types.Job{
 			PullReq: pullRequest,

@@ -63,7 +63,6 @@ func CleanBrokenRepos(path string) error {
 }
 
 // Initializes the repository and clones it into dest (which should be temp_repos)
-// TODO: handle "fetch by sha" disabled
 func initializeRepo(ctx context.Context, dest string, pr types.PullRequest) (string, error) {
 
 	path, cleanup, err := tempRepoPath(dest, pr.HeadSHA)
