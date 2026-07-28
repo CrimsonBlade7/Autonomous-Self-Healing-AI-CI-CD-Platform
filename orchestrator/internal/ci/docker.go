@@ -15,14 +15,28 @@ import (
 	"github.com/moby/moby/client"
 )
 
+type ImageManager interface {
+	ImageList(ctx context.Context, options client.ImageListOptions) (client.ImageListResult, error)
+	ImageRemove(ctx context.Context, imageID string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
+	ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
+}
+
+type ContainerManager interface {
+	ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
+	ContainerRemove(ctx context.Context, containerID string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
+	ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error)
+	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
+	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
+}
+
 // Cleans up old images
-func CleanOldImages(ctx context.Context, cli *client.Client) error {
-	images, err := cli.ImageList(ctx, client.ImageListOptions{All: true})
+func CleanOldImages(ctx context.Context, im ImageManager) error {
+	images, err := im.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
 	}
 	for _, item := range images.Items {
-		_, err = cli.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
+		_, err = im.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
 		if err != nil {
 			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
@@ -31,7 +45,7 @@ func CleanOldImages(ctx context.Context, cli *client.Client) error {
 }
 
 // Builds an image from src with sha as the tag.
-func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath string) error {
+func buildImage(ctx context.Context, im ImageManager, repoName, sha, srcPath string) (string, error) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
@@ -88,12 +102,14 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 		}
 	}()
 
-	imageResult, err := cli.ImageBuild(ctx, pr, client.ImageBuildOptions{
-		Tags:       []string{fmt.Sprintf("%s:%s", repoName, sha)},
+	tag := fmt.Sprintf("%s-%s", repoName, sha)
+
+	imageResult, err := im.ImageBuild(ctx, pr, client.ImageBuildOptions{
+		Tags:       []string{tag},
 		Dockerfile: "Dockerfile",
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to build image: %w", err)
+		return "", fmt.Errorf("Failed to build image: %w", err)
 	}
 	defer imageResult.Body.Close()
 
@@ -101,16 +117,16 @@ func buildImage(ctx context.Context, cli *client.Client, repoName, sha, srcPath 
 	// imageResults is discarded for now
 	_, err = io.Copy(io.Discard, imageResult.Body)
 	if err != nil {
-		return fmt.Errorf("Failed to print body: %w", err)
+		return "", fmt.Errorf("Failed to print body: %w", err)
 	}
 
-	return nil
+	return tag, nil
 }
 
 // Builds and runs a container labeled with tag.
-func runContainer(ctx context.Context, cli *client.Client, tag string) error {
+func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 
-	cont, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{
+	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{
 			AutoRemove: true,
 		},
@@ -122,7 +138,7 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 	}
 
 	defer func() {
-		_, err = cli.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{
+		_, err = cm.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{
 			RemoveVolumes: true,
 		})
 		if err != nil {
@@ -131,7 +147,7 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 		}
 	}()
 
-	logs, err := cli.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
+	logs, err := cm.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
@@ -181,12 +197,12 @@ func runContainer(ctx context.Context, cli *client.Client, tag string) error {
 		}
 	}()
 
-	_, err = cli.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
+	_, err = cm.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
 		return fmt.Errorf("Failed to start container: %w", err)
 	}
 
-	response := cli.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
+	response := cm.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
 	select {
 	case <-response.Result:
 		slog.Info("Container completed")

@@ -24,12 +24,12 @@ func StartJobPipeline(ctx context.Context, repoDir string, cli *client.Client, j
 
 			// TODO: insert tests from rag pipeline
 
-			err = buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path)
+			tag, err := buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path)
 			if err != nil {
 				slog.Error("Failed to build image", "error", err)
 				continue
 			}
-			err = runContainer(ctx, cli, job.PullReq.HeadSHA)
+			err = runContainer(ctx, cli, tag)
 			if err != nil {
 				slog.Error("Failed to build container", "error", err)
 				continue
