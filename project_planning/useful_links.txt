@@ -1,1 +1,2 @@
 https://devopscycle.com/blog/the-ultimate-docker-cheat-sheet
+https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status
