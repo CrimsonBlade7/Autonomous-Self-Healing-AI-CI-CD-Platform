@@ -41,7 +41,7 @@ func createReadyFile(path string) error {
 
 // Removes directories in path that do not contain a checkout.ready file
 func CleanBrokenWorkspaces(path string) error {
-	target := "checkout.ready"
+	readyFilename := "checkout.ready"
 	wsDirFiles, err := os.ReadDir(path)
 	if err != nil {
 		return fmt.Errorf("Failed to read directory %s: %w", path, err)
@@ -49,8 +49,8 @@ func CleanBrokenWorkspaces(path string) error {
 	for _, ws := range wsDirFiles {
 		if ws.IsDir() {
 			wsPath := filepath.Join(path, ws.Name())
-			path := filepath.Join(wsPath, target)
-			_, err = os.Stat(path)
+			readyPath := filepath.Join(wsPath, readyFilename)
+			_, err = os.Stat(readyPath)
 			if errors.Is(err, os.ErrNotExist) {
 				os.RemoveAll(wsPath)
 				fmt.Printf("Removed workspace: %s\n", wsPath)

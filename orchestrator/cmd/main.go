@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
+// TODO: make sure these locations always work
 var wsDir string = "./temp_workspaces"
 
 // Loads the .env variables
