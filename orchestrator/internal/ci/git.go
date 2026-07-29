@@ -14,8 +14,8 @@ import (
 	"github.com/go-git/go-git/v6/plumbing"
 )
 
-// Creates a unique temp directory in repoDir
-func tempRepoPath(path, sha string) (string, func() error, error) {
+// Creates a unique temp directory in workspaceDir
+func tempWorkspacePath(path, sha string) (string, func() error, error) {
 	path, err := os.MkdirTemp(path, fmt.Sprintf("sha%s_*", sha))
 	if err != nil {
 		return "", nil, err
@@ -40,42 +40,42 @@ func createReadyFile(path string) error {
 }
 
 // Removes directories in path that do not contain a checkout.ready file
-func CleanBrokenRepos(path string) error {
+func CleanBrokenWorkspaces(path string) error {
 	target := "checkout.ready"
-	repoDirFiles, err := os.ReadDir(path)
+	wsDirFiles, err := os.ReadDir(path)
 	if err != nil {
 		return fmt.Errorf("Failed to read directory %s: %w", path, err)
 	}
-	for _, repo := range repoDirFiles {
-		if repo.IsDir() {
-			repoPath := filepath.Join(path, repo.Name())
-			path := filepath.Join(repoPath, target)
+	for _, ws := range wsDirFiles {
+		if ws.IsDir() {
+			wsPath := filepath.Join(path, ws.Name())
+			path := filepath.Join(wsPath, target)
 			_, err = os.Stat(path)
 			if errors.Is(err, os.ErrNotExist) {
-				os.RemoveAll(repoPath)
-				fmt.Printf("Removed repo: %s\n", repoPath)
+				os.RemoveAll(wsPath)
+				fmt.Printf("Removed workspace: %s\n", wsPath)
 			} else if err != nil {
-				return fmt.Errorf("Failed to check for .ready file at %s: %w", repoPath, err)
+				return fmt.Errorf("Failed to check for .ready file at %s: %w", wsPath, err)
 			}
 		}
 	}
 	return nil
 }
 
-// Initializes the repository and clones it into dest (which should be temp_repos)
-func initializeRepo(ctx context.Context, dest string, pr types.PullRequest) (string, error) {
+// Initializes the workspace and clones it into dest (which should be temp_workspaces)
+func initializeWorkspace(ctx context.Context, dest string, pr types.PullRequest) (string, error) {
 
-	path, cleanup, err := tempRepoPath(dest, pr.HeadSHA)
+	path, cleanup, err := tempWorkspacePath(dest, pr.HeadSHA)
 	if err != nil {
 		return "", fmt.Errorf("Failed to make a temporary directory: %w", err)
 	}
 
-	repo, err := git.PlainInit(path, false)
+	ws, err := git.PlainInit(path, false)
 	if err != nil {
 		err = cleanup()
 		return "", fmt.Errorf("Failed to initialize repo %s at %s: %w", pr.Url, pr.HeadSHA, err)
 	}
-	_, err = repo.CreateRemote(&config.RemoteConfig{
+	_, err = ws.CreateRemote(&config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{pr.Url},
 	})
@@ -85,14 +85,14 @@ func initializeRepo(ctx context.Context, dest string, pr types.PullRequest) (str
 	}
 
 	// fetch specific sha
-	err = repo.FetchContext(ctx, &git.FetchOptions{
+	err = ws.FetchContext(ctx, &git.FetchOptions{
 		RemoteURL: pr.Url,
 		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
 		Depth:     1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		// attempt to fetch branch - for when "fetch by sha" is disabled
-		err = repo.FetchContext(ctx, &git.FetchOptions{
+		err = ws.FetchContext(ctx, &git.FetchOptions{
 			RemoteURL: pr.Url,
 			RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/temp-branch", pr.Branch))},
 		})
@@ -102,7 +102,7 @@ func initializeRepo(ctx context.Context, dest string, pr types.PullRequest) (str
 		return "", fmt.Errorf("Failed to fetch commit %s at %s: %w", pr.Url, pr.HeadSHA, err)
 	}
 
-	wt, err := repo.Worktree()
+	wt, err := ws.Worktree()
 	if err != nil {
 		err = cleanup()
 		return "", fmt.Errorf("Failed to get worktree: %w", err)

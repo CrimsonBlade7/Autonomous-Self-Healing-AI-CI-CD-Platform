@@ -12,7 +12,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
-var repoDir string = "./temp_repos"
+var wsDir string = "./temp_workspaces"
 
 // Loads the .env variables
 func loadEnv(secret, port *string) error {
@@ -45,9 +45,9 @@ func main() {
 		return
 	}
 
-	err = ci.CleanBrokenRepos(repoDir)
+	err = ci.CleanBrokenWorkspaces(wsDir)
 	if err != nil {
-		slog.Error("Failed to clean broken repos", "error", err)
+		slog.Error("Failed to clean broken workspaces", "error", err)
 		return
 	}
 
@@ -64,7 +64,7 @@ func main() {
 		return
 	}
 
-	go ci.StartJobPipeline(mainCtx, repoDir, cli, jobs)
+	go ci.StartJobPipeline(mainCtx, wsDir, cli, jobs)
 
 	go func() {
 		err = ci.StartServer(mainCtx, secret, port, jobs)

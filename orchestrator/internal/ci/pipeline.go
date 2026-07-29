@@ -10,15 +10,15 @@ import (
 
 // Starts the job pipeline.
 // Handles incoming jobs.
-func StartJobPipeline(ctx context.Context, repoDir string, cli *client.Client, jobs chan types.Job) {
+func StartJobPipeline(ctx context.Context, wsDir string, cli *client.Client, jobs chan types.Job) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case job := <-jobs:
-			path, err := initializeRepo(ctx, repoDir, job.PullReq)
+			path, err := initializeWorkspace(ctx, wsDir, job.PullReq)
 			if err != nil {
-				slog.Error("Failed to initialize the repository", "error", err)
+				slog.Error("Failed to initialize the workspace", "error", err)
 				continue
 			}
 

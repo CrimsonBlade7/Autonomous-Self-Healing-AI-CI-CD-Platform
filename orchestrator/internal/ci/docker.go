@@ -45,56 +45,16 @@ func CleanOldImages(ctx context.Context, im ImageManager) error {
 }
 
 // Builds an image from src with sha as the tag.
-func buildImage(ctx context.Context, im ImageManager, repoName, sha, srcPath string) (string, error) {
+func buildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string) (string, error) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
 	go func() {
-		tw := tar.NewWriter(pw)
-		defer tw.Close()
-
-		err := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
-			relPath, err := filepath.Rel(srcPath, path)
-			if err != nil {
-				return fmt.Errorf("Failed create relative path %s/%s: %w", srcPath, path, err)
-			}
-
-			// Skip root
-			if relPath == "." {
-				return nil
-			}
-
-			fi, err := d.Info()
-			if err != nil {
-				return fmt.Errorf("Failed to get info for %s: %w", path, err)
-			}
-
-			header, err := tar.FileInfoHeader(fi, d.Name())
-			if err != nil {
-				return fmt.Errorf("Failed to create file info header: %w", err)
-			}
-			header.Name = filepath.ToSlash(relPath)
-
-			err = tw.WriteHeader(header)
-			if err != nil {
-				return fmt.Errorf("Failed to write header: %w", err)
-			}
-
-			if d.Type().IsRegular() {
-				file, err := os.Open(path)
-				if err != nil {
-					return fmt.Errorf("Failed to open file %s: %w", path, err)
-				}
-				defer file.Close()
-				_, err = io.Copy(tw, file)
-				if err != nil {
-					return fmt.Errorf("Failed to write file contents to tar writer: %w", err)
-				}
-			}
-
-			return nil
-		})
-
+		err := tarWorkspace(pw, srcPath)
+		if err != nil {
+			slog.Error("Failed to tar the workspace", "error", err)
+			return
+		}
 		err = pw.CloseWithError(err)
 		if err != nil {
 			slog.Error("Pipe writter failed to close", "error", err)
@@ -102,7 +62,7 @@ func buildImage(ctx context.Context, im ImageManager, repoName, sha, srcPath str
 		}
 	}()
 
-	tag := fmt.Sprintf("%s-%s", repoName, sha)
+	tag := fmt.Sprintf("%s:%s", wsName, sha)
 
 	imageResult, err := im.ImageBuild(ctx, pr, client.ImageBuildOptions{
 		Tags:       []string{tag},
@@ -121,6 +81,54 @@ func buildImage(ctx context.Context, im ImageManager, repoName, sha, srcPath str
 	}
 
 	return tag, nil
+}
+
+func tarWorkspace(pw *io.PipeWriter, path string) error {
+	tw := tar.NewWriter(pw)
+	defer tw.Close()
+
+	err := filepath.WalkDir(path, func(path string, d os.DirEntry, err error) error {
+		relPath, err := filepath.Rel(path, path)
+		if err != nil {
+			return fmt.Errorf("Failed create relative path %s/%s: %w", path, path, err)
+		}
+
+		// Skip root
+		if relPath == "." {
+			return nil
+		}
+
+		fi, err := d.Info()
+		if err != nil {
+			return fmt.Errorf("Failed to get info for %s: %w", path, err)
+		}
+
+		header, err := tar.FileInfoHeader(fi, d.Name())
+		if err != nil {
+			return fmt.Errorf("Failed to create file info header: %w", err)
+		}
+		header.Name = filepath.ToSlash(relPath)
+
+		err = tw.WriteHeader(header)
+		if err != nil {
+			return fmt.Errorf("Failed to write header: %w", err)
+		}
+
+		if d.Type().IsRegular() {
+			file, err := os.Open(path)
+			if err != nil {
+				return fmt.Errorf("Failed to open file %s: %w", path, err)
+			}
+			defer file.Close()
+			_, err = io.Copy(tw, file)
+			if err != nil {
+				return fmt.Errorf("Failed to write file contents to tar writer: %w", err)
+			}
+		}
+
+		return nil
+	})
+	return err
 }
 
 // Builds and runs a container labeled with tag.
