@@ -9,10 +9,11 @@ import (
 	"path/filepath"
 
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/go-git/go-git/v6"
-	"github.com/go-git/go-git/v6/config"
-	"github.com/go-git/go-git/v6/plumbing"
 )
+
+type GitClient interface {
+	CheckoutCommit(ctx context.Context, path string, pr types.PullRequest) error
+}
 
 // Creates a unique temp directory in workspaceDir
 func tempWorkspacePath(path, sha string) (string, func() error, error) {
@@ -63,63 +64,17 @@ func CleanBrokenWorkspaces(path string) error {
 }
 
 // Initializes the workspace and clones it into dest (which should be temp_workspaces)
-func initializeWorkspace(ctx context.Context, dest string, pr types.PullRequest) (string, error) {
+func initializeWorkspace(ctx context.Context, dest string, pr types.PullRequest, cli GitClient) (string, error) {
 
 	path, cleanup, err := tempWorkspacePath(dest, pr.HeadSHA)
 	if err != nil {
 		return "", fmt.Errorf("Failed to make a temporary directory: %w", err)
 	}
 
-	ws, err := git.PlainInit(path, false)
+	err = cli.CheckoutCommit(ctx, path, pr)
 	if err != nil {
-		err = cleanup()
-		return "", fmt.Errorf("Failed to initialize repo %s at %s: %w", pr.Url, pr.HeadSHA, err)
-	}
-	_, err = ws.CreateRemote(&config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{pr.Url},
-	})
-	if err != nil {
-		err = cleanup()
-		return "", fmt.Errorf("Failed to create remote %s at %s: %w", pr.Url, pr.HeadSHA, err)
-	}
-
-	// fetch specific sha
-	err = ws.FetchContext(ctx, &git.FetchOptions{
-		RemoteURL: pr.Url,
-		RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
-		Depth:     1,
-	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
-		// attempt to fetch branch - for when "fetch by sha" is disabled
-		err = ws.FetchContext(ctx, &git.FetchOptions{
-			RemoteURL: pr.Url,
-			RefSpecs:  []config.RefSpec{config.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/temp-branch", pr.Branch))},
-		})
-		if err != nil {
-			err = cleanup()
-		}
-		return "", fmt.Errorf("Failed to fetch commit %s at %s: %w", pr.Url, pr.HeadSHA, err)
-	}
-
-	wt, err := ws.Worktree()
-	if err != nil {
-		err = cleanup()
-		return "", fmt.Errorf("Failed to get worktree: %w", err)
-	}
-
-	hash, ok := plumbing.FromHex(pr.HeadSHA)
-	if !ok {
-		err = cleanup()
-		return "", fmt.Errorf("Failed to hash the sha: %w", err)
-	}
-	err = wt.Checkout(&git.CheckoutOptions{
-		Hash:  hash,
-		Force: true,
-	})
-	if err != nil {
-		err = cleanup()
-		return "", fmt.Errorf("Failed to checkout: %w", err)
+		cleanup()
+		return "", fmt.Errorf("Failed to checkout commit: %v", err)
 	}
 
 	err = createReadyFile(path)
@@ -130,4 +85,9 @@ func initializeWorkspace(ctx context.Context, dest string, pr types.PullRequest)
 
 	slog.Info("Successfully checked out specific SHA natively!")
 	return path, nil
+}
+
+// TODO: placeholder
+func insertTests() error {
+	return nil // stub
 }

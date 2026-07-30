@@ -16,7 +16,7 @@ func StartJobPipeline(ctx context.Context, wsDir string, cli *client.Client, job
 		case <-ctx.Done():
 			return
 		case job := <-jobs:
-			path, err := initializeWorkspace(ctx, wsDir, job.PullReq)
+			path, err := initializeWorkspace(ctx, wsDir, job.PullReq, &GithubClient{})
 			if err != nil {
 				slog.Error("Failed to initialize the workspace", "error", err)
 				continue
@@ -24,7 +24,12 @@ func StartJobPipeline(ctx context.Context, wsDir string, cli *client.Client, job
 
 			// TODO: insert tests from rag pipeline
 
-			tag, err := buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path)
+			err = insertTests()
+			if err != nil {
+				slog.Error("Failed to insert tests", "error", err)
+				continue
+			}
+			tag, err := buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path, &RealTarBuilder{})
 			if err != nil {
 				slog.Error("Failed to build image", "error", err)
 				continue
