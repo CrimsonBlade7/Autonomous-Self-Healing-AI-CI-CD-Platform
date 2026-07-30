@@ -80,10 +80,6 @@ func main() {
 TODO List:
 	- testing
 		- interfaces for swapping out tests
-			- possibly refactor git.go?
-				- move git. logic to another file
-				- rename git.go file
-				- read claude reply
 		- add tests for the rest of the functions other than pr
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
