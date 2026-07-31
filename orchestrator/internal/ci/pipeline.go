@@ -2,6 +2,7 @@ package ci
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
@@ -23,22 +24,25 @@ func StartJobPipeline(ctx context.Context, wsDir string, cli *client.Client, job
 			}
 
 			// TODO: insert tests from rag pipeline
-
 			err = insertTests()
 			if err != nil {
 				slog.Error("Failed to insert tests", "error", err)
 				continue
 			}
+
 			tag, err := buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path, &RealTarBuilder{})
 			if err != nil {
 				slog.Error("Failed to build image", "error", err)
 				continue
 			}
-			err = runContainer(ctx, cli, tag)
+			logs, err := runContainer(ctx, cli, tag)
 			if err != nil {
 				slog.Error("Failed to build container", "error", err)
 				continue
 			}
+			defer logs.Close()
+
+			fmt.Println(logs)
 		}
 	}
 }
