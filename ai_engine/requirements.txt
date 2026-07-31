@@ -21,3 +21,6 @@ anthropic>=0.28.0
 
 # Settings management — reads env vars / .env files via Pydantic
 pydantic-settings>=2.3.0
+
+# Testing
+pytest>=8.0.0
