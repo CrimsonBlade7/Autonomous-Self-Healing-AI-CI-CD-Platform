@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/google/uuid"
 )
 
 /*
@@ -53,7 +52,7 @@ func verifyMessage(message []byte, signature, secret string) bool {
 }
 
 // Github webhook handler
-func whHandler(secret string, prProcess chan types.PullRequestProcess) http.HandlerFunc {
+func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -86,16 +85,18 @@ func whHandler(secret string, prProcess chan types.PullRequestProcess) http.Hand
 
 		slog.Info("Job recieved", "pull request", pullRequest)
 
-		prProcess <- types.PullRequestProcess{PullReq: pullRequest}
+		jobs <- types.Job{
+			PullReq: pullRequest,
+		}
 	}
 }
 
 // Starts the http server with secret s and port p
-func StartServer(ctx context.Context, secret, port string, prProcess chan types.PullRequestProcess) error {
+func StartServer(ctx context.Context, secret, port string, jobs chan types.Job) error {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(secret, prProcess)))
+	mux.Handle("/", http.HandlerFunc(whHandler(secret, jobs)))
 	server := &http.Server{
 		Addr:              port,
 		Handler:           mux,               // Inject your isolated router

@@ -8,9 +8,8 @@ import (
 	"path/filepath"
 )
 
-type RealTarBuilder struct{}
+type RealTarBuilder struct {}
 
-// Tars the workspace at path and streams it to pw.
 func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) error {
 	tw := tar.NewWriter(pw)
 	defer tw.Close()

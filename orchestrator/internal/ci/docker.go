@@ -1,13 +1,11 @@
 package ci
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
 
-	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -84,8 +82,8 @@ func buildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	return tag, nil
 }
 
-// Builds and runs a container labeled with tag.
-func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
+// Builds and runs a container labeled with tag. The caller is responsible for closing io.ReadCloser.
+func runContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{
@@ -95,7 +93,7 @@ func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 		Image: tag,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to create container %s: %w", tag, err)
+		return nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
 
 	defer func() {
@@ -111,56 +109,14 @@ func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 	logs, err := cm.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to create a container logger: %w", err)
+		return nil, fmt.Errorf("Failed to create a container logger: %w", err)
 	}
-
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-
-	go func() {
-		defer logs.Close()
-		defer stdoutWriter.Close()
-		defer stderrWriter.Close()
-
-		_, err = stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
-		if err != nil {
-			slog.Error("Failed reading logs", "error", err)
-			return
-		}
-	}()
-
-	go func() {
-		defer stdoutReader.Close()
-		scanner := bufio.NewScanner(stdoutReader)
-		for scanner.Scan() {
-			slog.Info(scanner.Text(), "container_id", cont.ID)
-		}
-		err = scanner.Err()
-		if err != nil {
-			slog.Error("Failed to scan the logs", "error", err)
-			return
-		}
-	}()
-
-	go func() {
-		defer stderrReader.Close()
-		scanner := bufio.NewScanner(stderrReader)
-		for scanner.Scan() {
-			slog.Error(scanner.Text(), "container_id", cont.ID)
-		}
-		err = scanner.Err()
-		if err != nil {
-			slog.Error("Failed to scan the logs", "error", err)
-			return
-		}
-	}()
 
 	_, err = cm.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
-		return fmt.Errorf("Failed to start container: %w", err)
+		return nil, fmt.Errorf("Failed to start container: %w", err)
 	}
 
 	response := cm.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
@@ -171,12 +127,5 @@ func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 		slog.Error("Container error", "error", err)
 	}
 
-	bytes, err := io.ReadAll(logs)
-	if err != nil {
-		return fmt.Errorf("Failed to read logs: %w", err)
-	}
-
-	slog.Info("Container Logs", slog.String("logs", string(bytes)))
-
-	return nil
+	return logs, nil
 }

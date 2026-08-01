@@ -88,11 +88,6 @@ func initializeWorkspace(ctx context.Context, dest string, pr types.PullRequest,
 }
 
 // TODO: placeholder
-func updateWorkspace() error {
-	return errors.New("Unimplemented function") // stub
-}
-
-// TODO: placeholder
 func insertTests() error {
-	return errors.New("Unimplemented function") // stub
+	return nil // stub
 }
