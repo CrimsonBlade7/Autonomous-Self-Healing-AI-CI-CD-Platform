@@ -1,5 +1,9 @@
 package types
 
+import(
+	"github.com/google/uuid"
+)
+
 type JobType int
 
 const (
@@ -10,5 +14,5 @@ const (
 type Job struct {
 	Jt      JobType
 	PullReq PullRequest
-	ID      uint64
+	ID      uuid.Uuid
 }
