@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/google/uuid"
 )
 
 /*
@@ -85,8 +86,12 @@ func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 
 		slog.Info("Job recieved", "pull request", pullRequest)
 
+		id := uuid.New()
+
 		jobs <- types.Job{
+			Jt:      types.INITIALIZE_WORKSPACE,
 			PullReq: pullRequest,
+			ID:      id,
 		}
 	}
 }
