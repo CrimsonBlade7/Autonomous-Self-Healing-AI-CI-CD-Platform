@@ -35,7 +35,6 @@ func loadEnv(secret, port *string) error {
 func main() {
 	var secret string
 	var port string
-	jobs := make(chan types.Job)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
@@ -65,10 +64,12 @@ func main() {
 		return
 	}
 
-	go ci.StartJobPipeline(mainCtx, wsDir, cli, jobs)
+
+
+	go ci.StartJobPipeline(mainCtx, wsDir, cli, make(chan types.Job))
 
 	go func() {
-		err = ci.StartServer(mainCtx, secret, port, jobs)
+		err = ci.StartServer(mainCtx, secret, port, make(chan types.PullRequestProcess))
 		if err != nil {
 			slog.Error("Server failure", "error", err)
 			return
@@ -84,4 +85,5 @@ TODO List:
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
 	- consider fast moving branches where commits are pushed after the webhook fires when handling "fetch by ref"
+	- .ready file may not be necessary
 */

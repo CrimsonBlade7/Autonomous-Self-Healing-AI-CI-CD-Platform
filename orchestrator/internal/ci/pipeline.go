@@ -28,28 +28,23 @@ func (jp *JobPipeline) StartJobPipeline(ctx context.Context, wsDir string, cli *
 					continue
 				}
 
-				jp[] // add sha to path
+				// TODO: insert tests from rag pipeline
 
-				// TODO: send to rag
-
-			case types.UPDATE_WORKSPACE:
-				err := insertTests()
+				err = insertTests()
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue
 				}
-
 				tag, err := buildImage(ctx, cli, job.PullReq.Name, job.PullReq.HeadSHA, path, &RealTarBuilder{})
 				if err != nil {
 					slog.Error("Failed to build image", "error", err)
 					continue
 				}
-				logs, err := runContainer(ctx, cli, tag)
+				err = runContainer(ctx, cli, tag)
 				if err != nil {
 					slog.Error("Failed to build container", "error", err)
 					continue
 				}
-				defer logs.Close()
 			}
 		}
 	}

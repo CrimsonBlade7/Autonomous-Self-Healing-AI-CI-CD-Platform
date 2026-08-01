@@ -53,7 +53,7 @@ func verifyMessage(message []byte, signature, secret string) bool {
 }
 
 // Github webhook handler
-func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
+func whHandler(secret string, prProcess chan types.PullRequestProcess) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -86,22 +86,16 @@ func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 
 		slog.Info("Job recieved", "pull request", pullRequest)
 
-		id := uuid.New()
-
-		jobs <- types.Job{
-			Jt:      types.INITIALIZE_WORKSPACE,
-			PullReq: pullRequest,
-			ID:      id,
-		}
+		prProcess <- types.PullRequestProcess{PullReq: pullRequest}
 	}
 }
 
 // Starts the http server with secret s and port p
-func StartServer(ctx context.Context, secret, port string, jobs chan types.Job) error {
+func StartServer(ctx context.Context, secret, port string, prProcess chan types.PullRequestProcess) error {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(secret, jobs)))
+	mux.Handle("/", http.HandlerFunc(whHandler(secret, prProcess)))
 	server := &http.Server{
 		Addr:              port,
 		Handler:           mux,               // Inject your isolated router

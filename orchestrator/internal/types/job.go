@@ -1,6 +1,6 @@
 package types
 
-import(
+import (
 	"github.com/google/uuid"
 )
 
@@ -12,7 +12,7 @@ const (
 )
 
 type Job struct {
-	Jt      JobType
-	PullReq PullRequest
-	ID      uuid.Uuid
+	PullReqProc PullRequestProcess
+	Jt          JobType
+	ID          uuid.UUID
 }
