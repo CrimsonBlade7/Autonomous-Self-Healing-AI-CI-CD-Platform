@@ -6,14 +6,15 @@ import (
 )
 
 type PullRequest struct {
-	Name    string `json:"name"`
-	Action  string `json:"action"`
-	Url     string `json:"url"`
-	Branch  string `json:"branch"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HeadSHA string `json:"headsha"`
-	BaseSHA string `json:"basesha"`
+	RepoName string `json:"name"`
+	Number   uint   `json:"number"`
+	Action   string `json:"action"`
+	Url      string `json:"url"`
+	Branch   string `json:"branch"`
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	HeadSHA  string `json:"headsha"`
+	BaseSHA  string `json:"basesha"`
 }
 
 // Populates fields from a byte slice
@@ -23,6 +24,7 @@ func (pr *PullRequest) UnmarshalJSON(data []byte) error {
 			Name string `json:"name"`
 		} `json:"repository"`
 		Action      string `json:"action"`
+		Number      uint   `json:"number"`
 		PullRequest struct {
 			Title string `json:"title"`
 			Body  string `json:"body"`
@@ -48,7 +50,13 @@ func (pr *PullRequest) UnmarshalJSON(data []byte) error {
 	if name == "" {
 		return fmt.Errorf("Name is empty")
 	}
-	pr.Name = name
+	pr.RepoName = name
+
+	number := temp.Number
+	if number == 0 {
+		return fmt.Errorf("Number is empty")
+	}
+	pr.Number = number
 
 	action := temp.Action
 	if action == "" {
@@ -91,8 +99,6 @@ func (pr *PullRequest) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("BaseSHA is empty")
 	}
 	pr.BaseSHA = baseSHA
-
-	
 
 	return nil
 }

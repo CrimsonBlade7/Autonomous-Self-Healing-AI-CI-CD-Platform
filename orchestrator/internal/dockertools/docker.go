@@ -1,4 +1,4 @@
-package ci
+package dockertools
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func CleanOldImages(ctx context.Context, im ImageManager) error {
 }
 
 // Builds an image from src with sha as the tag.
-func buildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string, tb TarBuilder) (string, error) {
+func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string, tb TarBuilder) (string, error) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
@@ -83,7 +83,7 @@ func buildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 }
 
 // Builds and runs a container labeled with tag. The caller is responsible for closing io.ReadCloser.
-func runContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, error) {
+func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{

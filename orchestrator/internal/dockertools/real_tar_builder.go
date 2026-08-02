@@ -1,4 +1,4 @@
-package ci
+package dockertools
 
 import (
 	"archive/tar"
