@@ -2,51 +2,34 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"os"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/ci"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/config"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/dockertools"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/pipelines"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/servertools"
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/joho/godotenv"
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/wstools"
+
 	"github.com/moby/moby/client"
 )
 
-// TODO: make sure these locations always work
-var wsDir string = "./temp_workspaces"
-
-// Loads the .env variables
-func loadEnv(secret, port *string) error {
-	err := godotenv.Load()
-	if err != nil {
-		return fmt.Errorf("Failed to load .env file: %w", err)
-	}
-	*secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
-	if *secret == "" {
-		return fmt.Errorf("Secret is empty")
-	}
-	*port = os.Getenv("PORT")
-	if *port == "" {
-		return fmt.Errorf("Port is empty")
-	}
-	return nil
-}
-
 func main() {
-	var secret string
-	var port string
-	jobs := make(chan types.Job)
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
+	prChannel := make(chan types.PullRequest)
+	wfm := pipelines.NewWorkflowManager()
 
-	err := loadEnv(&secret, &port)
+	// Initialize environment variables to global scope
+	err := config.Init()
 	if err != nil {
-		slog.Error("Failed to load .env variables", "error", err)
+		slog.Error("Failed to initialize global variables", "error", err)
 		return
 	}
 
-	err = ci.CleanBrokenWorkspaces(wsDir)
+	err = wstools.ClearWorkspaces()
 	if err != nil {
 		slog.Error("Failed to clean broken workspaces", "error", err)
 		return
@@ -59,16 +42,16 @@ func main() {
 	}
 	defer cli.Close()
 
-	err = ci.CleanOldImages(mainCtx, cli)
+	err = dockertools.ClearOldImages(mainCtx, cli)
 	if err != nil {
 		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
-	go ci.StartJobPipeline(mainCtx, wsDir, cli, jobs)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, prChannel)
 
 	go func() {
-		err = ci.StartServer(mainCtx, secret, port, jobs)
+		err = servertools.StartServer(mainCtx, prChannel)
 		if err != nil {
 			slog.Error("Server failure", "error", err)
 			return
@@ -79,13 +62,7 @@ func main() {
 /*
 TODO List:
 	- testing
-		- interfaces for swapping out tests
-			- possibly refactor git.go?
-				- move git. logic to another file
-				- rename git.go file
-				- read claude reply
 		- add tests for the rest of the functions other than pr
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
-	- consider fast moving branches where commits are pushed after the webhook fires when handling "fetch by ref"
 */

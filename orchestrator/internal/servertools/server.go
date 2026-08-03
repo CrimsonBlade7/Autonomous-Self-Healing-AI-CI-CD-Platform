@@ -1,4 +1,4 @@
-package ci
+package servertools
 
 import (
 	"context"
@@ -14,45 +14,28 @@ import (
 	"strings"
 	"time"
 
+	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/config"
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
 )
 
-/*
-	TextMessage denotes a text data message. The text message payload is
-	interpreted as UTF-8 encoded text data.
-	TextMessage = 1
-
-	BinaryMessage denotes a binary data message.
-	BinaryMessage = 2
-
-	CloseMessage denotes a close control message. The optional message
-	payload contains a numeric code and text. Use the FormatCloseMessage
-	function to format a close message payload.
-	CloseMessage = 8
-
-	PingMessage denotes a ping control message. The optional message payload
-	is UTF-8 encoded text.
-	PingMessage = 9
-
-	PongMessage denotes a pong control message. The optional message payload
-	is UTF-8 encoded text.
-	PongMessage = 10
-*/
-
 // Generates the HMAC key based on the message and secret
-func GenerateHMAC(message []byte, secret string) string {
-	hash := hmac.New(sha256.New, []byte(secret))
+func generateHMAC(message []byte) string {
+	hash := hmac.New(sha256.New, []byte(config.Secret))
 	hash.Write(message)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // Verifies if the message is legitimate
-func verifyMessage(message []byte, signature, secret string) bool {
-	return hmac.Equal([]byte(signature), []byte(GenerateHMAC(message, secret)))
+func verifyMessage(message []byte, signature string) bool {
+	return hmac.Equal([]byte(signature), []byte(generateHMAC(message)))
+}
+
+func seconds(n uint) time.Duration {
+	return time.Duration(n) * time.Second
 }
 
 // Github webhook handler
-func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
+func whHandler(prChannel chan types.PullRequest) http.HandlerFunc {
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -63,16 +46,16 @@ func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 			return
 		}
 
-		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
-		if !verifyMessage(body, realSig, secret) {
-			w.WriteHeader(http.StatusUnauthorized)
-			slog.Warn("Unauthorized request", "warn", err)
-			return
-		}
-
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
+		if !verifyMessage(body, realSig) {
+			w.WriteHeader(http.StatusUnauthorized)
+			slog.Warn("Unauthorized request", "warn", err)
 			return
 		}
 
@@ -85,25 +68,23 @@ func whHandler(secret string, jobs chan types.Job) http.HandlerFunc {
 
 		slog.Info("Job recieved", "pull request", pullRequest)
 
-		jobs <- types.Job{
-			PullReq: pullRequest,
-		}
+		prChannel <- pullRequest
 	}
 }
 
-// Starts the http server with secret s and port p
-func StartServer(ctx context.Context, secret, port string, jobs chan types.Job) error {
+// Starts the http server.
+func StartServer(ctx context.Context, prChannel chan types.PullRequest) error {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(secret, jobs)))
+	mux.Handle("/", http.HandlerFunc(whHandler(prChannel)))
 	server := &http.Server{
-		Addr:              port,
-		Handler:           mux,               // Inject your isolated router
-		ReadTimeout:       5 * time.Second,   // Max time to read the request body
-		ReadHeaderTimeout: 2 * time.Second,   // Max time to read just the headers
-		WriteTimeout:      10 * time.Second,  // Max time to write the response
-		IdleTimeout:       120 * time.Second, // Max time to keep idle connections alive
+		Addr:              config.Port,
+		Handler:           mux,          // Inject your isolated router
+		ReadTimeout:       seconds(5),   // Max time to read the request body
+		ReadHeaderTimeout: seconds(2),   // Max time to read just the headers
+		WriteTimeout:      seconds(10),  // Max time to write the response
+		IdleTimeout:       seconds(120), // Max time to keep idle connections alive
 	}
 
 	// create a context for server lifetime
@@ -124,7 +105,7 @@ func StartServer(ctx context.Context, secret, port string, jobs chan types.Job) 
 	<-lifetime.Done()
 
 	// create a context for duration of the server shutdown
-	countdown := 30 * time.Second
+	countdown := time.Duration(config.ServerShutdownTimeLimit) * time.Second
 	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, countdown)
 	defer cancelShutdown()
 

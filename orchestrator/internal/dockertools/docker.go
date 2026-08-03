@@ -1,16 +1,11 @@
-package ci
+package dockertools
 
 import (
-	"archive/tar"
-	"bufio"
 	"context"
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 
-	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -29,8 +24,12 @@ type ContainerManager interface {
 	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
 }
 
+type TarBuilder interface {
+	TarWorkspace(pw *io.PipeWriter, path string) error
+}
+
 // Cleans up old images
-func CleanOldImages(ctx context.Context, im ImageManager) error {
+func ClearOldImages(ctx context.Context, im ImageManager) error {
 	images, err := im.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
@@ -45,12 +44,12 @@ func CleanOldImages(ctx context.Context, im ImageManager) error {
 }
 
 // Builds an image from src with sha as the tag.
-func buildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string) (string, error) {
+func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string, tb TarBuilder) (string, error) {
 
 	pr, pw := io.Pipe()
 	defer pr.Close()
 	go func() {
-		err := tarWorkspace(pw, srcPath)
+		err := tb.TarWorkspace(pw, srcPath)
 		if err != nil {
 			slog.Error("Failed to tar the workspace", "error", err)
 			return
@@ -83,56 +82,8 @@ func buildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	return tag, nil
 }
 
-func tarWorkspace(pw *io.PipeWriter, path string) error {
-	tw := tar.NewWriter(pw)
-	defer tw.Close()
-
-	err := filepath.WalkDir(path, func(path string, d os.DirEntry, err error) error {
-		relPath, err := filepath.Rel(path, path)
-		if err != nil {
-			return fmt.Errorf("Failed create relative path %s/%s: %w", path, path, err)
-		}
-
-		// Skip root
-		if relPath == "." {
-			return nil
-		}
-
-		fi, err := d.Info()
-		if err != nil {
-			return fmt.Errorf("Failed to get info for %s: %w", path, err)
-		}
-
-		header, err := tar.FileInfoHeader(fi, d.Name())
-		if err != nil {
-			return fmt.Errorf("Failed to create file info header: %w", err)
-		}
-		header.Name = filepath.ToSlash(relPath)
-
-		err = tw.WriteHeader(header)
-		if err != nil {
-			return fmt.Errorf("Failed to write header: %w", err)
-		}
-
-		if d.Type().IsRegular() {
-			file, err := os.Open(path)
-			if err != nil {
-				return fmt.Errorf("Failed to open file %s: %w", path, err)
-			}
-			defer file.Close()
-			_, err = io.Copy(tw, file)
-			if err != nil {
-				return fmt.Errorf("Failed to write file contents to tar writer: %w", err)
-			}
-		}
-
-		return nil
-	})
-	return err
-}
-
-// Builds and runs a container labeled with tag.
-func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
+// Builds and runs a container labeled with tag. The caller is responsible for closing io.ReadCloser.
+func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{
@@ -142,7 +93,7 @@ func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 		Image: tag,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to create container %s: %w", tag, err)
+		return nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
 
 	defer func() {
@@ -158,56 +109,14 @@ func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 	logs, err := cm.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to create a container logger: %w", err)
+		return nil, fmt.Errorf("Failed to create a container logger: %w", err)
 	}
-
-	stdoutReader, stdoutWriter := io.Pipe()
-	stderrReader, stderrWriter := io.Pipe()
-
-	go func() {
-		defer logs.Close()
-		defer stdoutWriter.Close()
-		defer stderrWriter.Close()
-
-		_, err = stdcopy.StdCopy(stdoutWriter, stderrWriter, logs)
-		if err != nil {
-			slog.Error("Failed reading logs", "error", err)
-			return
-		}
-	}()
-
-	go func() {
-		defer stdoutReader.Close()
-		scanner := bufio.NewScanner(stdoutReader)
-		for scanner.Scan() {
-			slog.Info(scanner.Text(), "container_id", cont.ID)
-		}
-		err = scanner.Err()
-		if err != nil {
-			slog.Error("Failed to scan the logs", "error", err)
-			return
-		}
-	}()
-
-	go func() {
-		defer stderrReader.Close()
-		scanner := bufio.NewScanner(stderrReader)
-		for scanner.Scan() {
-			slog.Error(scanner.Text(), "container_id", cont.ID)
-		}
-		err = scanner.Err()
-		if err != nil {
-			slog.Error("Failed to scan the logs", "error", err)
-			return
-		}
-	}()
 
 	_, err = cm.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
-		return fmt.Errorf("Failed to start container: %w", err)
+		return nil, fmt.Errorf("Failed to start container: %w", err)
 	}
 
 	response := cm.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
@@ -218,12 +127,5 @@ func runContainer(ctx context.Context, cm ContainerManager, tag string) error {
 		slog.Error("Container error", "error", err)
 	}
 
-	bytes, err := io.ReadAll(logs)
-	if err != nil {
-		return fmt.Errorf("Failed to read logs: %w", err)
-	}
-
-	slog.Info("Container Logs", slog.String("logs", string(bytes)))
-
-	return nil
+	return logs, nil
 }
