@@ -5,21 +5,21 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/config"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
 	"github.com/go-git/go-git/v6"
 	gitConfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-type GithubClient struct{
+type GithubClient struct {
 	repo *git.Repository
 }
 
 var CancelLoopErr error = errors.New("This commit originates from this platform. Pull canceled to prevent infinite loops.")
 
-// Initializes the repository at path.
+// Initializes the repository at path. Returns CancelLoopErr if the committer was this service to prevent infinite loops.
 func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) error {
 	r, err := git.PlainInit(path, false)
 	if err != nil {

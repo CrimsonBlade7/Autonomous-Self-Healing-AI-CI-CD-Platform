@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/dockertools"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/wstools"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/dockertools"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/wstools"
 	"github.com/moby/moby/client"
 )
 
@@ -20,18 +20,14 @@ type Workflow struct {
 	cleanup func() error
 }
 
-type JobType uint
+type Job uint
 
 const (
-	OPEN JobType = iota
+	OPEN Job = iota
 	CLOSE
 	SYNC
 	RUN_TESTS
 )
-
-type Job struct {
-	Jt JobType
-}
 
 // Creates a new workflow. Path and cleanup function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
@@ -39,7 +35,7 @@ func newWorkflow(pr types.PullRequest) (*Workflow, error) {
 	wf := Workflow{
 		wfid:    pr.Number,
 		pullReq: pr,
-		Jobs: make(chan Job),
+		Jobs:    make(chan Job),
 	}
 
 	return &wf, nil
@@ -56,7 +52,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 		case <-ctx.Done():
 			return nil
 		case job := <-wf.Jobs:
-			switch job.Jt {
+			switch job {
 			case OPEN:
 				p, clean, err := wstools.InitWorkspace(ctx, wf.pullReq, &wstools.GithubClient{})
 				wf.path = p
@@ -77,7 +73,6 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 
 			case SYNC:
 				// TODO: implement sync job
-
 
 			case RUN_TESTS:
 				// TODO: insert tests from rag pipeline
@@ -103,7 +98,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 				// TODO: return logs
 
 			default:
-				panic(fmt.Sprintf("Unsupported job type: %v", job.Jt))
+				panic(fmt.Sprintf("Unsupported job type: %v", job))
 			}
 		}
 	}
@@ -118,8 +113,3 @@ func (wf *Workflow) GetPullRequest() types.PullRequest {
 func (wf *Workflow) GetPath() string {
 	return wf.path
 }
-
-/*
-	url := "https://github.com/CrimsonBlade7/CI-CD-Test.git"
-	sha := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71"
-*/

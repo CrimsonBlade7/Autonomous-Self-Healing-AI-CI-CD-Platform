@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
 	"github.com/moby/moby/client"
 )
 
@@ -48,6 +48,16 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 		case <-ctx.Done():
 			return
 		case pr := <-prChannel:
+			switch pr.Action {
+			case "opened":
+			case "closed":
+			case "reopened":
+			case "edited":
+			case "synchronize":
+			default:
+				slog.Info("Unsupported pull request action", "action", pr.Action)
+			}
+
 			num := pr.Number
 			wfp, ok := wfm.Get(num)
 			if !ok {
@@ -68,11 +78,14 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 						cancel()
 					}
 				}()
-				wfp.Jobs <- Job{Jt: OPEN}
+				wfp.Jobs <- OPEN
 			} else {
 				// Updates an existing workflow
+				if pr.Action == "syncronize" {
+
+				}
 				wfp.update(pr)
-				wfp.Jobs <- Job{Jt: SYNC}
+				wfp.Jobs <- SYNC
 			}
 		}
 	}

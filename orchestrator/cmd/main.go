@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/config"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/dockertools"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/pipelines"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/servertools"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/wstools"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/dockertools"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/pipelines"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/servertools"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/wstools"
 
 	"github.com/moby/moby/client"
 )
@@ -20,6 +20,7 @@ func main() {
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
 	prChannel := make(chan types.PullRequest)
+	// patchChannel := make(chan types.PullRequest)
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
@@ -52,7 +53,8 @@ func main() {
 	go wfm.RunWorkflowPipeline(mainCtx, cli, prChannel)
 
 	go func() {
-		err = servertools.StartServer(mainCtx, prChannel)
+		// TODO: add patch channel
+		err = servertools.StartServer(mainCtx, prChannel, nil)
 		if err != nil {
 			slog.Error("Server failure", "error", err)
 			return
@@ -68,4 +70,9 @@ TODO List:
 	- create an error channel?
 	- do not create a new request if the new commit came from this service
 	- pr.url is not necessary; add it to config
+	- handle receiving prs while workflow is running
+		- cancel running containers
+		- clear images (optional?)
+		- update workspace
+		- if patches for the wrong sha are received, discard them
 */
