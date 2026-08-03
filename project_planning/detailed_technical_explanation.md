@@ -1,5 +1,5 @@
 =========================================
-SELF-HEALING AI DEVOPS AGENT: SYSTEM ARCHITECTURE
+AI DEVOPS AGENT: SYSTEM ARCHITECTURE
 =========================================
 
 0. REPOSITORY STRUCTURE (MONOREPO)
@@ -51,20 +51,21 @@ independently deployable services.
 * On the Right: The Data & AI Processing zone serves as the system's "brain." 
   It is computational and analytical. The AI/Data Processing service (Python + 
   FastAPI, living at `ai-service/` in the same monorepo) manages complex data 
-  analysis, context retrieval, and decision-making using the RAG Pipeline and 
-  Code Generator. These components query a centralized 
+  analysis, context retrieval, and diagnostic test authoring using the RAG 
+  Pipeline and Test Author component. These components query a centralized 
   intelligence store--the PostgreSQL database with pgvector--to understand code 
-  and logs before generating responses.
+  and logs before writing new tests aimed at reproducing a failure and 
+  compiling a human-readable report.
 
 * In the Middle: The two zones do not share a message broker. Instead, they talk 
   directly over HTTP: the Backend Orchestrator sends a job payload (tagged with 
   a workflow ID) to the AI/Data Processing service and gets an immediate 
   acknowledgment back, so the real-time scheduling of simple, lightweight 
   linting jobs is never blocked waiting on a response. The heavy lifting of 
-  code generation or log analysis happens afterward, asynchronously, inside 
+  test authoring or log analysis happens afterward, asynchronously, inside 
   the Python service itself (via Celery/Redis, which is private to that 
-  service), and the result is delivered back to Go through a dedicated 
-  callback endpoint once it's ready.
+  service), and the resulting summary report is delivered back to Go through a 
+  dedicated callback endpoint once it's ready.
 
 
 2. LOW-LEVEL COMPONENT INTERACTIONS
@@ -127,27 +128,38 @@ LOOP B: Failure Analysis (RAG Pipeline)
   this raw data into a structured context window for an LLM.
 
 
-LOOP C: Self-Healing & Patch Generation
----------------------------------------
-* RAG Pipeline -> Context/Request -> Code Generator
-  The RAG pipeline hands the full contextual "package" (failing code snippet + 
-  error logs + historical vector context) to the Code Generator.
+LOOP C: Self-Diagnosis & Test Authoring
+----------------------------------------
 
-* Code Generator -> (LLM processing) -> Self-Healing/Code Patch
-  The generator (calling an LLM) creates a proposed modification designed to fix 
-  the failing test suite without introducing regressions.
+* RAG Pipeline -> Context/Request -> Test Author
+  The RAG pipeline hands the full contextual "package" (failing code snippet + 
+  error logs + historical vector context) to the Test Author component.
+
+* Test Author -> (LLM processing) -> Diagnostic Test Suite
+  The generator (calling an LLM) authors new test code — or refines tests it 
+  previously wrote in an earlier iteration — designed to reproduce and 
+  characterize the failing behavior without introducing unrelated changes. It 
+  does not create or apply any modification to the application's existing 
+  source files.
 
 * AI/Data Processing (Python) -> Callback POST -> Backend Orchestrator (Go)
-  Once Celery finishes generating the fix, the Python service encapsulates it 
-  as a standard unified diff format (a patch) and POSTs it directly to a 
-  dedicated Go endpoint (e.g. `/ai-callback`), including the same workflow ID 
-  so Go can correlate the patch with the correct pipeline run. Because a plain 
-  HTTP request offers no delivery guarantee if Go is briefly unreachable (e.g. 
-  mid-restart), this callback includes retry-with-backoff logic on the Python 
-  side.
+  Once Celery finishes running the authored tests and compiling the results, 
+  the Python service packages them into a structured summary report — what 
+  was investigated, the tests written, which ran, which passed/failed, and 
+  recommended fixes framed as suggestions for a human — and POSTs it directly 
+  to a dedicated Go endpoint (e.g. `/ai-callback`), including the same 
+  workflow ID so Go can correlate the report with the correct pipeline run. 
+  Because a plain HTTP request offers no delivery guarantee if Go is briefly 
+  unreachable (e.g. mid-restart), this callback includes retry-with-backoff 
+  logic on the Python side.
 
-* Backend Orchestrator (Go) -> Repository Update
-  The Go Orchestrator uses the Docker Engine SDK to launch a specialized 'Git' 
-  container that applies the patch, commits the changes, and pushes the fix 
-  back to the GitHub PR. This allows the pipeline to re-run and confirm the 
-  automated fix.
+* Backend Orchestrator (Go) -> Report Surfacing
+  The Go Orchestrator receives the summary report and makes it available for 
+  human review — for example, posting it as a PR comment, or storing it 
+  somewhere retrievable.
+  [OPEN QUESTION, per your instructions: exact delivery/storage mechanism for
+   the report is not yet decided — PR comment vs. dashboard vs. artifact
+   store, etc.]
+  The Go Orchestrator does **not** launch a container to apply a patch, 
+  commit, or push any AI-authored change to application source. The pipeline 
+  only re-runs when a human developer pushes their own fix to the PR.

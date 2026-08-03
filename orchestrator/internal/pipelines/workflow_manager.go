@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
 	"github.com/moby/moby/client"
 )
 
@@ -14,6 +14,7 @@ type WorkflowManager struct {
 	mu        sync.RWMutex
 }
 
+// Creates a new workflow manager.
 func NewWorkflowManager() WorkflowManager {
 	return WorkflowManager{
 		workflows: make(map[uint]*Workflow),
@@ -34,6 +35,12 @@ func (wfm *WorkflowManager) Set(key uint, wfp *Workflow) {
 	wfm.workflows[key] = wfp
 }
 
+func (wfm *WorkflowManager) Remove(key uint) {
+	wfm.mu.Lock()
+	defer wfm.mu.Unlock()
+	delete(wfm.workflows, key)
+}
+
 // Starts the run pipeline. Handles incoming workflows.
 func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, prChannel chan types.PullRequest) {
 	for {
@@ -41,17 +48,28 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 		case <-ctx.Done():
 			return
 		case pr := <-prChannel:
+			switch pr.Action {
+			case "opened":
+			case "closed":
+			case "reopened":
+			case "edited":
+			case "synchronize":
+			default:
+				slog.Info("Unsupported pull request action", "action", pr.Action)
+			}
+
 			num := pr.Number
 			wfp, ok := wfm.Get(num)
 			if !ok {
 				// Creates and starts a new workflow for a new pr
-				wfp, err := newWorkflow(ctx, pr)
+				wfp, err := newWorkflow(pr)
 				if err != nil {
 					slog.Error("Failed to create a new workflow", "error", err)
 					continue
 				}
 				wfm.Set(num, wfp)
 				go func() {
+					defer wfm.Remove(num)
 					subCtx, cancel := context.WithCancel(ctx)
 					defer cancel()
 					err := wfp.runWorkflow(subCtx, cli)
@@ -59,12 +77,15 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 						slog.Error("Workflow failed", "error", err)
 						cancel()
 					}
-					wfp.Jobs <- Job{Jt: OPEN}
 				}()
+				wfp.Jobs <- OPEN
 			} else {
 				// Updates an existing workflow
+				if pr.Action == "syncronize" {
+
+				}
 				wfp.update(pr)
-				wfp.Jobs <- Job{Jt: SYNC}
+				wfp.Jobs <- SYNC
 			}
 		}
 	}

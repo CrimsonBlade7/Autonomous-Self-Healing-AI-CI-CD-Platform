@@ -1,7 +1,7 @@
-# Technical Overview: Self-Healing AI DevOps Agent System
+# Technical Overview: Autonomous AI CI/CD Pipeline
 
 ## 1. Executive Summary
-The **Self-Healing AI DevOps Agent** is an automated, closed-loop infrastructure system designed to detect, analyze, and remediate software delivery and testing pipeline failures automatically. By integrating real-time repository orchestration with a Retrieval-Augmented Generation (RAG) artificial intelligence loop, the system transforms standard Continuous Integration/Continuous Deployment (CI/CD) workflows from static feedback loops into proactive, self-correcting mechanisms.
+The **Self-Healing AI DevOps Agent** is an automated, closed-loop infrastructure system designed to detect, diagnose, and surface human-reviewed fix suggestions for software delivery and testing pipeline failures. By integrating real-time repository orchestration with a Retrieval-Augmented Generation (RAG) artificial intelligence loop, the system transforms standard Continuous Integration/Continuous Deployment (CI/CD) workflows from static feedback loops into proactive, self-diagnosing mechanisms that isolate failures, author targeted tests to characterize them, and hand developers a clear, actionable report — rather than applying changes to application code on its own.
 
 ---
 
@@ -10,7 +10,7 @@ To understand how this system works, imagine an automated software engineering t
 
 *   **The Project Manager & Builder (Repository & Orchestration Zone):** Written in highly performant Go, this side of the system acts as the "nervous system." It watches GitHub for new code contributions, spins up isolated container boxes (Docker containers) to test the code, and tracks whether those tests pass or fail.
 *   **The Direct Line (Go↔Python HTTP + the Analyst's Private To-Do List):** Rather than routing every hand-off through a shared post office, the manager (Go) and the analyst (Python) talk to each other directly over HTTP — the manager hands off a request and gets an instant "got it" back, then keeps working while the analyst investigates in the background. Internally, the analyst keeps its own private to-do list (built using Redis and Celery) to manage that background work; this list isn't shared infrastructure with the manager. When the analyst finishes, it calls the manager back directly with the result.
-*   **The AI Senior Engineer (Data & AI Processing Zone):** Written in Python and FastAPI, this acts as the system's "brain." If a test fails, this component investigates the error logs, searches a historical database (PostgreSQL with `pgvector`) to find similar problems or related code, and intelligently drafts a direct fix (a "code patch") to heal the codebase without human intervention.
+*   **The AI Diagnostic Engineer (Data & AI Processing Zone):** Written in Python and FastAPI, this acts as the system's "brain." If a test job fails, this component investigates the error logs, searches a historical database (PostgreSQL with `pgvector`) to find similar problems or related code, and writes new test code — additional or refined tests aimed at reproducing and isolating the failure — without ever touching the existing application source. It then compiles a summary report describing what it investigated, the tests it authored and ran, their pass/fail results, and recommended fixes for a human developer to review and apply themselves.
 
 ---
 
@@ -61,7 +61,7 @@ Constructed for concurrency, speed, and safety, the Go backend orchestrates exte
 ### 4.2 Go↔Python Communication & Python's Internal Task Queue
 A direct HTTP link connects the real-time orchestration tier to the computational AI tier, with the AI tier managing its own asynchronous execution internally rather than through a broker shared with Go.
 *   **Technologies:** Plain HTTP request/response for the Go↔Python leg (job dispatch and callback). Internally, the Python service uses Celery with Redis as its broker to run RAG/LLM analysis asynchronously; this Redis instance is scoped to the Python service only.
-*   **Purpose:** Decouples the low-latency Go backend from the high-latency LLM execution routines without requiring a shared message broker between services. Go sends the job payload — tagged with a workflow ID generated when the originating webhook was first received — and immediately gets back a `200 OK`, then continues processing other linting and tracking jobs concurrently. Once Celery finishes formulating a patch, Python POSTs a callback to a dedicated Go endpoint (`/ai-callback`), using the same workflow ID so Go can correlate the result with the correct pipeline run. Because plain HTTP offers no delivery guarantee if Go is briefly unreachable (e.g. mid-restart), the callback includes retry-with-backoff logic on the Python side.
+*   **Purpose:** Decouples the low-latency Go backend from the high-latency LLM execution routines without requiring a shared message broker between services. Go sends the job payload — tagged with a workflow ID generated when the originating webhook was first received — and immediately gets back a `200 OK`, then continues processing other linting and tracking jobs concurrently. Once Celery finishes its investigation and test authoring, Python POSTs a callback to a dedicated Go endpoint (`/ai-callback`), using the same workflow ID so Go can correlate the result with the correct pipeline run. Because plain HTTP offers no delivery guarantee if Go is briefly unreachable (e.g. mid-restart), the callback includes retry-with-backoff logic on the Python side.
 
 **Design note — why not a shared queue?** An alternative design routed the Go↔Python leg through Redis as well, with Go pushing jobs onto a shared queue instead of calling Python directly. That would add durability (jobs surviving a Go/Python restart) and backlog visibility (queue-depth inspection), but was judged not worth the added infrastructure and cross-service coordination (a shared broker address, queue naming, etc.) given the team's current experience level and the low real-world risk of the callback failure mode during active development. This is a contained, revisitable decision: migrating the Go↔Python leg to a queue later would only mean swapping the transport layer, not restructuring either service.
 
@@ -69,7 +69,7 @@ A direct HTTP link connects the real-time orchestration tier to the computationa
 The logical and cognitive tier running specialized analytical modules.
 *   **FastAPI Wrapper:** Exposes ultra-fast, asynchronous REST endpoints for receiving context requests from the Event Bus.
 *   **RAG (Retrieval-Augmented Generation) Pipeline:** Rather than sending empty queries to an LLM, the RAG pipeline gathers granular context—failing code snippets, targeted dependencies, and historical documentation—and builds a heavily enriched semantic prompt.
-*   **Code Generator:** The algorithmic execution block that interfaces with LLMs to output syntactically valid, localized unified diff patches designed to solve the explicit failure pattern.
+*   **Test Author:** The algorithmic execution block that interfaces with LLMs to author new, syntactically valid test code aimed at reproducing and isolating the explicit failure pattern. This component never modifies existing application source files; it may iterate on and refine the tests it has itself authored. Its output — the tests, their run results, and recommended fixes — feeds into a summary report rather than a patch applied to production code.
 
 ### 4.4 Intelligence & Persistence Layer
 *   **PostgreSQL + pgvector:** A dual-purpose relational and vector database. Standard tables hold application configuration, logs, and pipeline statuses, while the `pgvector` extension stores high-dimensional mathematical embeddings of your codebase, documentation, and historical error logs.
@@ -95,16 +95,20 @@ The full operational capabilities of the agent can be mapped across three distin
     *   The structural definition of the exact files and lines of code mentioned in the stack trace.
 4.  **Context Synthesis:** The database returns a curated corpus of contextual analytics, past patches, and raw code snippets, assembling them within the **RAG Pipeline** to provide complete situational awareness.
 
-### Loop C: Self-Healing & Patch Generation
-1.  **AI Orchestration:** The **RAG Pipeline** sends the context-rich prompt matrix directly into the **Code Generator**.
-2.  **Patch Synthesis:** The underlying AI model evaluates the failure, determines the underlying logic defect, and constructs a clean, isolated **Self-Healing Code Patch** (formatted as a clean Git unified diff).
-3.  **Message Delivery:** Once Celery finishes generating the patch, the Python service POSTs it directly to a dedicated Go endpoint (**`/ai-callback`**), including the same workflow ID so Go can correlate the patch with the correct pipeline run. Because a plain HTTP request has no delivery guarantee if Go is briefly unreachable (e.g. mid-restart), this callback includes retry-with-backoff logic on the Python side.
-4.  **Automated Remediation:** The Go engine executes a secure Docker worker that checks out the repository branch, safely applies the unified diff patch, commits the correction, and pushes it back up to the active **GitHub Pull Request**. This automatically retriggers the CI/CD pipeline to validate the fix.
+### Loop C: Self-Diagnosis & Test Authoring
+1.  **AI Orchestration:** The **RAG Pipeline** sends the context-rich prompt matrix directly into the **Test Author**.
+2.  **Test Synthesis:** The underlying AI model evaluates the failure, forms a hypothesis about the underlying defect, and authors new test code — or refines tests it previously wrote — designed to reproduce, isolate, and characterize the failing behavior. It does not touch, diff, or otherwise modify the application's existing source files.
+3.  **Report Delivery:** Once Celery finishes running the authored tests and compiling results, the Python service POSTs a structured summary report directly to a dedicated Go endpoint (**`/ai-callback`**), including the same workflow ID so Go can correlate the report with the correct pipeline run. The report covers what was investigated, the tests written, which passed/failed, and recommended fixes framed as suggestions for a human to review — not as an applied change. Because a plain HTTP request has no delivery guarantee if Go is briefly unreachable (e.g. mid-restart), this callback includes retry-with-backoff logic on the Python side.
+4.  **Report Surfacing:** The Go Orchestrator receives the summary report and makes it available for human review — e.g., posting it as a PR comment, or storing it for retrieval elsewhere.
+    <!-- OPEN QUESTION (per your instructions): exact delivery/storage
+         mechanism for the report (PR comment vs. dashboard vs. artifact
+         store, etc.) isn't decided yet. -->
+    The Go orchestrator does **not** run `git apply`, commit, or push any AI-authored change to source code. The pipeline only re-runs when a human pushes their own fix.
 
 ---
 
 ## 6. Summary of System Benefits
-*   **Zero Downtime Remediation:** Triage and minor code corrections occur within minutes of a failure, eliminating long debug wait cycles.
-*   **Reduced Engineering Cognitive Load:** Developers are spared from diagnosing trivial, repetitive errors, allowing focus on deep product architecture.
-*   **Institutional Memory:** By logging every error, vectorizing its context, and capturing successful human and AI fixes inside `pgvector`, the system gets progressively smarter with every single build cycle.
+*   **Fast, Continuous Diagnosis:** Investigation and reproduction of test failures — via newly authored, targeted tests — happens within minutes of a failure, so a human developer starts debugging with a head start instead of from scratch.
+*   **Reduced Engineering Cognitive Load:** Developers are spared the initial legwork of reproducing and isolating trivial, repetitive failures, allowing focus on deciding and implementing the actual fix.
+*   **Institutional Memory:** By logging every error, vectorizing its context, and capturing successful human fixes alongside the AI's own diagnostic tests inside `pgvector`, the system gets progressively better at pinpointing failures with every single build cycle.
 *   **Simplified Coordination via Monorepo:** Because the orchestrator and AI service ship from one repository with one CI pipeline and one release cadence, changes to their shared contract (job payload, workflow ID, callback shape) are reviewed and merged atomically instead of coordinated across separate repos and release schedules.

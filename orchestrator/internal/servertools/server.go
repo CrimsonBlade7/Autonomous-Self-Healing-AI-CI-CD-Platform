@@ -1,11 +1,14 @@
 package servertools
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,24 +17,59 @@ import (
 	"strings"
 	"time"
 
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/config"
-	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/pipelines"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
 )
 
 // Generates the HMAC key based on the message and secret
-func generateHMAC(message []byte) string {
-	hash := hmac.New(sha256.New, []byte(config.Secret))
+func generateHMAC(message []byte, secret string) string {
+	hash := hmac.New(sha256.New, []byte(secret))
 	hash.Write(message)
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
 // Verifies if the message is legitimate
-func verifyMessage(message []byte, signature string) bool {
-	return hmac.Equal([]byte(signature), []byte(generateHMAC(message)))
+func verifyMessage(message []byte, secret, signature string) bool {
+	return hmac.Equal([]byte(signature), []byte(generateHMAC(message, secret)))
 }
 
+// Returns time.Duration of n seconds
 func seconds(n uint) time.Duration {
 	return time.Duration(n) * time.Second
+}
+
+// Sends a http request to the ai service
+func SendMsgPkgRequest(ctx context.Context, mp types.MsgPkg) error {
+	cli := http.Client{
+		Timeout: seconds(10),
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, seconds(5))
+	defer cancel()
+
+	msg, err := json.Marshal(mp)
+	if err != nil {
+		return fmt.Errorf("Failed to marshal the message package: %w", err)
+	}
+	msgReader := bytes.NewReader(msg)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.AIServiceUrl, msgReader)
+	if err != nil {
+		return fmt.Errorf("Failed to create http request: %w", err)
+	}
+
+	req.Header.Set("HMAC-KEY", generateHMAC(msg, config.AIServiceSecret))
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("Failed to send http request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Bad response, status: %v", resp.StatusCode)
+	}
+	return nil
 }
 
 // Github webhook handler
@@ -53,7 +91,7 @@ func whHandler(prChannel chan types.PullRequest) http.HandlerFunc {
 		}
 
 		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
-		if !verifyMessage(body, realSig) {
+		if !verifyMessage(body, config.GithubSecret, realSig) {
 			w.WriteHeader(http.StatusUnauthorized)
 			slog.Warn("Unauthorized request", "warn", err)
 			return
@@ -72,14 +110,25 @@ func whHandler(prChannel chan types.PullRequest) http.HandlerFunc {
 	}
 }
 
+func patchHandler(wfm *pipelines.WorkflowManager) http.HandlerFunc {
+	// TODO: patch handler unimplmented
+	return func(w http.ResponseWriter, r *http.Request) {
+		
+	}
+}
+
 // Starts the http server.
-func StartServer(ctx context.Context, prChannel chan types.PullRequest) error {
+func StartServer(ctx context.Context, prChannel chan types.PullRequest, wfm *pipelines.WorkflowManager) error {
 
 	// initialize server
 	mux := http.NewServeMux()
 	mux.Handle("/", http.HandlerFunc(whHandler(prChannel)))
+	mux.Handle("/patch", http.HandlerFunc(patchHandler(wfm)))
+
+	port := fmt.Sprintf(":%s", config.Port)
+
 	server := &http.Server{
-		Addr:              config.Port,
+		Addr:              port,
 		Handler:           mux,          // Inject your isolated router
 		ReadTimeout:       seconds(5),   // Max time to read the request body
 		ReadHeaderTimeout: seconds(2),   // Max time to read just the headers
