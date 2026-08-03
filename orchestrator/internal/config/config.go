@@ -12,19 +12,20 @@ var RootDir string
 var WsDir string
 var Secret string
 var Port string
+var ServerShutdownTimeLimit uint = 30
 
 // Loads the env variables
-func loadEnv(secret, port *string) error {
+func loadEnv() error {
 	err := godotenv.Load()
 	if err != nil {
 		return fmt.Errorf("Failed to load .env file: %w", err)
 	}
-	*secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
-	if *secret == "" {
+	Secret = os.Getenv("GITHUB_WEBHOOK_SECRET")
+	if Secret == "" {
 		return fmt.Errorf("Secret is empty")
 	}
-	*port = os.Getenv("PORT")
-	if *port == "" {
+	Port = os.Getenv("PORT")
+	if Port == "" {
 		return fmt.Errorf("Port is empty")
 	}
 	return nil
@@ -32,8 +33,7 @@ func loadEnv(secret, port *string) error {
 
 // Initializes global variables
 func Init() error {
-
-	err := loadEnv(&Secret, &Port)
+	err := loadEnv()
 	if err != nil {
 		return fmt.Errorf("Failed to load env variables: %w", err)
 	}
@@ -55,7 +55,7 @@ func Init() error {
 	return nil
 }
 
-// GetPath returns BaseDir + relPath
+// GetPath returns the relative path from the root orchestrator (RootDir + relPath)
 func GetPath(relPath string) string {
 	return filepath.Join(RootDir, relPath)
 }

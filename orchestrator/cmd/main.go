@@ -20,7 +20,9 @@ func main() {
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
 	prChannel := make(chan types.PullRequest)
+	wfm := pipelines.NewWorkflowManager()
 
+	// Initialize environment variables to global scope
 	err := config.Init()
 	if err != nil {
 		slog.Error("Failed to initialize global variables", "error", err)
@@ -40,13 +42,13 @@ func main() {
 	}
 	defer cli.Close()
 
-	err = dockertools.CleanOldImages(mainCtx, cli)
+	err = dockertools.ClearOldImages(mainCtx, cli)
 	if err != nil {
 		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
-	go pipelines.StartWorkflowPipeline(mainCtx, cli, prChannel)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, prChannel)
 
 	go func() {
 		err = servertools.StartServer(mainCtx, prChannel)

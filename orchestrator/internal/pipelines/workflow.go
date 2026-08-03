@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/dockertools"
 	"github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator/internal/types"
@@ -12,7 +13,7 @@ import (
 )
 
 type Workflow struct {
-	wfid    uint
+	wfid    uint // The pr number
 	pullReq types.PullRequest
 	path    string
 	Jobs    chan Job
@@ -22,16 +23,18 @@ type Workflow struct {
 type JobType uint
 
 const (
-	INIT JobType = iota
-	UPDATE
-	SYNC // TODO: handle branch syncing
+	OPEN JobType = iota
+	CLOSE
+	SYNC
+	ADD_TESTS
+	RETURN_LOGS
 )
 
 type Job struct {
 	Jt JobType
 }
 
-func newWorkflow(ctx context.Context, pr types.PullRequest) (Workflow, error) {
+func newWorkflow(ctx context.Context, pr types.PullRequest) (*Workflow, error) {
 	p, clean, err := wstools.InitWorkspace(ctx, pr, &wstools.GithubClient{})
 	wf := Workflow{
 		wfid:    pr.Number,
@@ -43,33 +46,45 @@ func newWorkflow(ctx context.Context, pr types.PullRequest) (Workflow, error) {
 	if err != nil {
 		cleanerr := clean()
 		if cleanerr != nil {
-			return Workflow{}, fmt.Errorf("Failed to cleanup workspace: %w", cleanerr)
+			return &Workflow{}, fmt.Errorf("Failed to cleanup workspace: %w", cleanerr)
 		}
-		return Workflow{}, fmt.Errorf("Failed to create a temporary workspace: %w", err)
+		return &Workflow{}, fmt.Errorf("Failed to create a temporary workspace: %w", err)
 	}
-	return wf, nil
+	return &wf, nil
+}
+
+func (wf *Workflow) update(pr types.PullRequest) {
+	wf.pullReq = pr
 }
 
 // Starts the job pipeline. Handles incoming jobs.
-func (wf *Workflow) StartWorkflow(ctx context.Context, cli *client.Client) error {
+func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case job := <-wf.Jobs:
+			// TODO: handoff to rag
 			switch job.Jt {
-			case INIT:
+			case OPEN:
+				// TODO: handle opening a pr
 
-			case UPDATE:
+			case CLOSE:
+				// TODO: implement close pr
 
+			case SYNC:
+				// TODO: implement sync job
+
+			case ADD_TESTS:
 				// TODO: insert tests from rag pipeline
 				err := wstools.InsertTests()
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue
 				}
-
-				tag, err := dockertools.BuildImage(ctx, cli, string(wf.wfid), wf.pullReq.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
+				nameFormatter := strings.NewReplacer("/", "-", "|", "-", "<", "-", ">", "-", "\"", "-")
+				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullReq.Branch, wf.wfid))
+				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullReq.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
 				if err != nil {
 					slog.Error("Failed to build image", "error", err)
 					continue
@@ -81,7 +96,8 @@ func (wf *Workflow) StartWorkflow(ctx context.Context, cli *client.Client) error
 				}
 				defer logs.Close()
 
-				fmt.Println(logs)
+			case RETURN_LOGS:
+				// TODO: implement returning logs
 
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job.Jt))

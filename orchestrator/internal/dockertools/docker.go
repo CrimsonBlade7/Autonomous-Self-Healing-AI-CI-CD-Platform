@@ -29,7 +29,7 @@ type TarBuilder interface {
 }
 
 // Cleans up old images
-func CleanOldImages(ctx context.Context, im ImageManager) error {
+func ClearOldImages(ctx context.Context, im ImageManager) error {
 	images, err := im.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
