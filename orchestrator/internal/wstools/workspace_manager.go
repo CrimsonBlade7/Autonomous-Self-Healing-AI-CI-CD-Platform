@@ -11,7 +11,9 @@ import (
 )
 
 type GitClient interface {
-	CheckoutCommit(ctx context.Context, path string, pr types.PullRequest) error
+	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
+	CommitPush(commitMsg, wsPath, branch, sha string) error
+	UpdateRepo(ctx context.Context, pr types.PullRequest) error
 }
 
 // Creates a unique temp directory in workspaceDir
@@ -35,7 +37,7 @@ func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (st
 
 	path, cleanup, err := tempWorkspace(config.WsDir, pr.HeadSHA)
 
-	err = cli.CheckoutCommit(ctx, path, pr)
+	err = cli.InitRepo(ctx, path, pr)
 	if err != nil {
 		cleanerr := cleanup()
 		if cleanerr != nil {

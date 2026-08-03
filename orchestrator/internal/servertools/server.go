@@ -72,12 +72,18 @@ func whHandler(prChannel chan types.PullRequest) http.HandlerFunc {
 	}
 }
 
+func patchHandler(w http.ResponseWriter, r *http.Request) {
+	// TODO: patch handler unimplmented
+}
+
 // Starts the http server.
 func StartServer(ctx context.Context, prChannel chan types.PullRequest) error {
 
 	// initialize server
 	mux := http.NewServeMux()
 	mux.Handle("/", http.HandlerFunc(whHandler(prChannel)))
+	mux.Handle("/patch", http.HandlerFunc(patchHandler))
+
 	server := &http.Server{
 		Addr:              config.Port,
 		Handler:           mux,          // Inject your isolated router

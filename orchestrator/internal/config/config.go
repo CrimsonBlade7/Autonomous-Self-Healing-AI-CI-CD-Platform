@@ -12,6 +12,7 @@ var RootDir string
 var WsDir string
 var Secret string
 var Port string
+var BotName string = "ci-cd-bot"
 var ServerShutdownTimeLimit uint = 30
 
 // Loads the env variables

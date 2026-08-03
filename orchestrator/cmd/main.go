@@ -29,6 +29,7 @@ func main() {
 		return
 	}
 
+	// TODO: temp in case server crashes
 	err = wstools.ClearWorkspaces()
 	if err != nil {
 		slog.Error("Failed to clean broken workspaces", "error", err)
@@ -65,4 +66,6 @@ TODO List:
 		- add tests for the rest of the functions other than pr
 	- remove images and containers on success, keep of failure for inspection
 	- create an error channel?
+	- do not create a new request if the new commit came from this service
+	- pr.url is not necessary; add it to config
 */
