@@ -58,7 +58,6 @@ func SendMsgPkgRequest(ctx context.Context, mp types.MsgPkg) error {
 		return fmt.Errorf("Failed to create http request: %w", err)
 	}
 
-	req.Header.Set("HMAC-KEY", generateHMAC(msg, config.AIServiceSecret))
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := cli.Do(req)

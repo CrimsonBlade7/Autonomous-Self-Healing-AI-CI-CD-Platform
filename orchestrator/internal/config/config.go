@@ -15,7 +15,7 @@ var RepositoryUrl string
 var GithubSecret string
 var Port string
 var BotName string = "ci-cd-bot"
-var AIServiceUrl string
+var AIServiceUrl string // TODO: or maybe port?
 var AIServiceSecret string
 var ServerShutdownTimeLimit uint = 30
 

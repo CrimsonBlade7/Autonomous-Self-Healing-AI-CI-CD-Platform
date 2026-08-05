@@ -10,7 +10,7 @@ import (
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/pipelines"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/servertools"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/wstools"
+	_ "github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/wstools"
 
 	"github.com/moby/moby/client"
 )
@@ -30,12 +30,12 @@ func main() {
 		return
 	}
 
-	// TODO: temp in case server crashes
-	err = wstools.ClearWorkspaces()
-	if err != nil {
-		slog.Error("Failed to clean broken workspaces", "error", err)
-		return
-	}
+	// // TODO: temp in case server crashes
+	// err = wstools.ClearWorkspaces()
+	// if err != nil {
+	// 	slog.Error("Failed to clean broken workspaces", "error", err)
+	// 	return
+	// }
 
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
@@ -67,7 +67,6 @@ TODO List:
 	- testing
 		- add tests for the rest of the functions other than pr
 	- remove images and containers on success, keep of failure for inspection
-	- create an error channel?
 	- do not create a new request if the new commit came from this service
 	- pr.url is not necessary; add it to config
 	- handle receiving prs while workflow is running
@@ -81,4 +80,8 @@ TODO List:
 		- handle updates to main
 		- save the whole repo
 		- make a snapshot at a pr
+	- figure out delivery mechanisms
+		- tests: http body
+		- logs: http body
+		- repo: path + id + etc and shared volume for persistance
 */
