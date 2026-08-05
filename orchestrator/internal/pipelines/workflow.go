@@ -13,11 +13,12 @@ import (
 )
 
 type Workflow struct {
-	wfid    uint // The pr number
-	pullReq types.PullRequest
-	path    string
-	Jobs    chan Job
-	cleanup func() error
+	wfid       uint // The pr number
+	pullReq    types.PullRequest
+	path       string
+	Jobs       chan Job
+	cleanup    func() error
+	AttemptNum uint
 }
 
 type Job uint

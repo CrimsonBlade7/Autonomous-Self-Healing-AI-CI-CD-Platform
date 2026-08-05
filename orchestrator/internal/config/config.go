@@ -9,14 +9,15 @@ import (
 )
 
 // TODO: figure out which should be in the .env
-var RootDir string
-var WsDir string
+var RootDir string // The root of this project.
+var RepoDir string // The directory that contains the repository root.
+var WsDir string   // The directory that contains all workspaces.
 var RepositoryUrl string
 var GithubSecret string
 var Port string
 var BotName string = "ci-cd-bot"
-var AIServiceUrl string // TODO: or maybe port?
-var AIServiceSecret string
+var AIEngineSecret string
+var AIEnginePort string
 var ServerShutdownTimeLimit uint = 30
 
 /*
@@ -32,28 +33,28 @@ func loadEnv() error {
 	}
 	RepositoryUrl = os.Getenv("GITHUB_REPOSITORY_URL")
 	if RepositoryUrl == "" {
-		return fmt.Errorf("Repository url is empty")
+		return fmt.Errorf("Repository url is empty.")
 	}
 	GithubSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if GithubSecret == "" {
-		return fmt.Errorf("Secret is empty")
-	}
-	AIServiceUrl = os.Getenv("AI_SERVICE_URL")
-	if AIServiceUrl == "" {
-		return fmt.Errorf("AI service url is empty")
-	}
-	AIServiceSecret = os.Getenv("AI_SERVICE_URL")
-	if AIServiceSecret == "" {
-		return fmt.Errorf("AI service secret is empty")
+		return fmt.Errorf("Secret is empty.")
 	}
 	Port = os.Getenv("PORT")
 	if Port == "" {
-		return fmt.Errorf("Port is empty")
+		return fmt.Errorf("Port is empty.")
+	}
+	AIEngineSecret = os.Getenv("AI_ENGINE_SECRET")
+	if AIEnginePort == "" {
+		return fmt.Errorf("AI Engine secret is empty.")
+	}
+	AIEnginePort = os.Getenv("AI_ENGINE_PORT")
+	if AIEnginePort == "" {
+		return fmt.Errorf("AI Engine url is empty.")
 	}
 	return nil
 }
 
-// Initializes global variables
+// Initializes global variables. Must be called first in main.
 func Init() error {
 	err := loadEnv()
 	if err != nil {
@@ -72,8 +73,10 @@ func Init() error {
 	// Set the global BaseDir to the executable's directory
 
 	// Warning: only works if the path to main is orchestrator/cmd/main.go
-	RootDir = filepath.Dir(filepath.Dir(exePath))
-	WsDir = GetPath("/temp_workspaces")
+	// RootDir = ./Autonomous-AI-CI-CD-Platform
+	RootDir = filepath.Dir(filepath.Dir(filepath.Dir(exePath)))
+	WsDir = GetPath("/shared/workspaces")
+	RepoDir = GetPath("/shared")
 	return nil
 }
 

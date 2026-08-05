@@ -1,7 +1,7 @@
 ### SYSTEM PROMPT / CONTEXT FOR NEW AI ASSISTANT
 
 #### Project Overview & Vision
-We are building a self-hosted, repository-aware CI/CD platform and AI DevOps Agent. The system listens for GitHub pull request (PR) webhooks, orchestrates a custom pipeline of isolated containerized jobs (linting, building, testing), tracks pipeline state, and uses a RAG pipeline to analyze code context/logs. When a test job fails, the AI service autonomously authors new test code — never modifying the existing application source — to reproduce and diagnose the failure, and produces a summary report with recommended fixes for a human developer to review and apply ("self-diagnosing" pipelines).
+We are building a self-hosted, repository-aware CI/CD platform and AI DevOps Agent. The system listens for GitHub pull request (PR) webhooks, orchestrates a custom pipeline of isolated containerized jobs (linting, building, testing), tracks pipeline state, and uses a RAG pipeline to analyze code context/logs. When a test job fails, the AI Engine autonomously authors new test code — never modifying the existing application source — to reproduce and diagnose the failure, and produces a summary report with recommended fixes for a human developer to review and apply ("self-diagnosing" pipelines).
 
 The whole system lives in a **single monorepo**. The Go orchestrator and the Python AI/Data service are separate runtime processes (they talk over HTTP), but they are not separate projects — one repo, one set of issues/PRs, one CI pipeline, one version history. Neither service is meant to be built, run, or released on its own; a root-level `docker-compose.yml` is the standard way to bring the whole system up locally.
 

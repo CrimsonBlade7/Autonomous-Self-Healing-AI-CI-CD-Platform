@@ -9,7 +9,7 @@ type PullRequest struct {
 	RepoName string `json:"name"`
 	Number   uint   `json:"number"`
 	Action   string `json:"action"`
-	Url      string `json:"url"` // TODO: remove; save in config
+	Url      string `json:"url"`
 	Branch   string `json:"branch"`
 	Title    string `json:"title"`
 	Body     string `json:"body"`

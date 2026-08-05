@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/pipelines"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
 )
 
@@ -39,8 +38,8 @@ func seconds(n uint) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-// Sends a http request to the ai service
-func SendMsgPkgRequest(ctx context.Context, mp types.MsgPkg) error {
+// Sends a http request to the AI Engine
+func SendRequestAIEngine(ctx context.Context, msgType string, msg any) error {
 	cli := http.Client{
 		Timeout: seconds(10),
 	}
@@ -48,19 +47,20 @@ func SendMsgPkgRequest(ctx context.Context, mp types.MsgPkg) error {
 	ctx, cancel := context.WithTimeout(ctx, seconds(5))
 	defer cancel()
 
-	msg, err := json.Marshal(mp)
+	msgBytes, err := json.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("Failed to marshal the message package: %w", err)
 	}
-	msgReader := bytes.NewReader(msg)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, config.AIServiceUrl, msgReader)
+	msgReader := bytes.NewReader(msgBytes)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, config.AIEnginePort, msgReader)
 	if err != nil {
 		return fmt.Errorf("Failed to create http request: %w", err)
 	}
 
-	req.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Message-Type", msgType)
 
-	resp, err := cli.Do(req)
+	resp, err := cli.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("Failed to send http request: %w", err)
 	}
@@ -72,8 +72,7 @@ func SendMsgPkgRequest(ctx context.Context, mp types.MsgPkg) error {
 }
 
 // Github webhook handler
-func whHandler(prChannel chan types.PullRequest) http.HandlerFunc {
-
+func whHandler(ctx context.Context, prChannel chan types.PullRequest) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		body, err := io.ReadAll(r.Body)
@@ -96,43 +95,79 @@ func whHandler(prChannel chan types.PullRequest) http.HandlerFunc {
 			return
 		}
 
-		var pullRequest types.PullRequest
-		err = pullRequest.UnmarshalJSON(body)
-		if err != nil {
-			slog.Error("Failed to unmsarhsal the json", "error", err)
+		action := r.Header.Get("X-GitHub-Event")
+		switch action {
+		case "push":
+			SendRequestAIEngine(ctx, "Push-Notification", nil)
+			return
+
+		case "pull_request":
+			var pullRequest types.PullRequest
+			err = pullRequest.UnmarshalJSON(body)
+			if err != nil {
+				slog.Error("Failed to unmsarhsal the json", "error", err)
+				return
+			}
+
+			slog.Info("Job recieved", "pull request", pullRequest)
+
+			prChannel <- pullRequest
+
+		default:
+			slog.Error("Unsupported webhook action", "action", action)
 			return
 		}
-
-		slog.Info("Job recieved", "pull request", pullRequest)
-
-		prChannel <- pullRequest
 	}
 }
 
-func patchHandler(wfm *pipelines.WorkflowManager) http.HandlerFunc {
-	// TODO: patch handler unimplmented
+func aiEngineResponseHandler(respChannel chan types.Response) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			slog.Error("Failed to read request body", "error", err)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		realSig := r.Header.Get("HMAC-Signature-256")
+		if !verifyMessage(body, config.AIEngineSecret, realSig) {
+			w.WriteHeader(http.StatusUnauthorized)
+			slog.Warn("Unauthorized request", "warn", err)
+			return
+		}
+
+		var resp types.Response
+		err = json.Unmarshal(body, &resp)
+		if err != nil {
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			slog.Error("Could not unmarshal the data into a type.Response", "error", err)
+			return
+		}
+
+		respChannel <- resp
 	}
 }
 
 // Starts the http server.
-func StartServer(ctx context.Context, prChannel chan types.PullRequest, wfm *pipelines.WorkflowManager) error {
+func StartServer(ctx context.Context, prChannel chan types.PullRequest, respChannel chan types.Response) error {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(prChannel)))
-	mux.Handle("/patch", http.HandlerFunc(patchHandler(wfm)))
+	mux.Handle("/", http.HandlerFunc(whHandler(ctx, prChannel)))
+	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(respChannel)))
 
 	port := fmt.Sprintf(":%s", config.Port)
-
 	server := &http.Server{
 		Addr:              port,
-		Handler:           mux,          // Inject your isolated router
-		ReadTimeout:       seconds(5),   // Max time to read the request body
-		ReadHeaderTimeout: seconds(2),   // Max time to read just the headers
-		WriteTimeout:      seconds(10),  // Max time to write the response
-		IdleTimeout:       seconds(120), // Max time to keep idle connections alive
+		Handler:           mux,         // Inject your isolated router
+		ReadHeaderTimeout: seconds(2),  // Max time to read just the headers
+		WriteTimeout:      seconds(10), // Max time to write the response
 	}
 
 	// create a context for server lifetime

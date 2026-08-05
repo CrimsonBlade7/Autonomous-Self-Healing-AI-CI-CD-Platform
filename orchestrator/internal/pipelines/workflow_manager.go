@@ -9,6 +9,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
+// Manages workflows and assigns jobs.
 type WorkflowManager struct {
 	workflows map[uint]*Workflow
 	mu        sync.RWMutex
@@ -42,7 +43,7 @@ func (wfm *WorkflowManager) Remove(key uint) {
 }
 
 // Starts the run pipeline. Handles incoming workflows.
-func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, prChannel chan types.PullRequest) {
+func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, prChannel chan types.PullRequest, respChannel chan types.Response) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -87,6 +88,12 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 				}
 				wfp.update(pr)
 				wfp.Jobs <- SYNC
+			}
+		case resp := <-respChannel:
+			if resp.Summary == "" {
+
+			} else {
+
 			}
 		}
 	}
