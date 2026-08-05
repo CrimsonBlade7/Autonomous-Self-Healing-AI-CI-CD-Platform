@@ -48,6 +48,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 		case <-ctx.Done():
 			return
 		case pr := <-prChannel:
+			// TODO: handle different types of prs
 			switch pr.Action {
 			case "opened":
 			case "closed":

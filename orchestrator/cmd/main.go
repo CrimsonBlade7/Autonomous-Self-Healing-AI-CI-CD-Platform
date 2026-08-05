@@ -75,4 +75,10 @@ TODO List:
 		- clear images (optional?)
 		- update workspace
 		- if patches for the wrong sha are received, discard them
+	- handle max test patching attempts
+	- * make whole repository aware
+		- change webhook to trigger on push to main
+		- handle updates to main
+		- save the whole repo
+		- make a snapshot at a pr
 */
