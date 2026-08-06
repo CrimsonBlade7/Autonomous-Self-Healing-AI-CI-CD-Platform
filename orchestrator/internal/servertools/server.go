@@ -120,6 +120,7 @@ func whHandler(ctx context.Context, prChannel chan types.PullRequest) http.Handl
 	}
 }
 
+// Handles responses from the AI Engine and sends response to respChannel.
 func aiEngineResponseHandler(respChannel chan types.Response) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
@@ -165,9 +166,9 @@ func StartServer(ctx context.Context, prChannel chan types.PullRequest, respChan
 	port := fmt.Sprintf(":%s", config.Port)
 	server := &http.Server{
 		Addr:              port,
-		Handler:           mux,         // Inject your isolated router
-		ReadHeaderTimeout: seconds(2),  // Max time to read just the headers
-		WriteTimeout:      seconds(10), // Max time to write the response
+		Handler:           mux,                               // Inject your isolated router
+		ReadHeaderTimeout: seconds(config.ReadHeaderTimeout), // Max time to read just the headers
+		WriteTimeout:      seconds(config.WriteTimeout),      // Max time to write the response
 	}
 
 	// create a context for server lifetime

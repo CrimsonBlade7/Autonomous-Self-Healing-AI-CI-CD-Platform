@@ -19,6 +19,8 @@ var BotName string = "ci-cd-bot"
 var AIEngineSecret string
 var AIEnginePort string
 var ServerShutdownTimeLimit uint = 30
+var ReadHeaderTimeout uint = 2
+var WriteTimeout uint = 5
 
 /*
 	url := "https://github.com/CrimsonBlade7/CI-CD-Test.git"

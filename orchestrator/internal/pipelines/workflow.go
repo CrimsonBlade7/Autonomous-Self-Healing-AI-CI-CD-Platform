@@ -13,12 +13,13 @@ import (
 )
 
 type Workflow struct {
-	wfid       uint // The pr number
-	pullReq    types.PullRequest
-	path       string
-	Jobs       chan Job
-	cleanup    func() error
-	AttemptNum uint
+	wfid             uint // The pr number
+	pullReq          types.PullRequest
+	path             string
+	Jobs             chan Job
+	cleanup          func() error
+	AttemptNum       uint
+	currentTestsPath string // TODO: Save the tests to a seperate folder or have the ai engine send the final version at the end
 }
 
 type Job uint

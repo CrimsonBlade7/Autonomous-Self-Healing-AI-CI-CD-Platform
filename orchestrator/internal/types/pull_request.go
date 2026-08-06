@@ -13,8 +13,8 @@ type PullRequest struct {
 	Branch   string `json:"branch"`
 	Title    string `json:"title"`
 	Body     string `json:"body"`
-	HeadSHA  string `json:"headsha"` // TODO: may be unnecessary if we just use the branch
-	BaseSHA  string `json:"basesha"` // TODO: remove base?
+	HeadSHA  string `json:"headsha"`
+	BaseSHA  string `json:"basesha"`
 }
 
 // Populates fields from a byte slice
