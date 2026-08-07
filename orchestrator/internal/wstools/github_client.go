@@ -13,29 +13,26 @@ import (
 	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
-type GithubClient struct {
-	repo *git.Repository
-}
+type GithubClient struct{}
 
 var CancelLoopErr error = errors.New("This commit originates from this platform. Pull canceled to prevent infinite loops.")
 
 // Initializes the repository at path. Returns CancelLoopErr if the committer was this service to prevent infinite loops.
 func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) error {
-	r, err := git.PlainInit(path, false)
+	repo, err := git.PlainInit(path, false)
 	if err != nil {
-		return fmt.Errorf("Failed to initialize repo %s at %s: %w", pr.Url, pr.HeadSHA, err)
+		return fmt.Errorf("Failed to initialize repo %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 	}
-	c.repo = r
 
-	_, err = c.repo.CreateRemote(&gitConfig.RemoteConfig{
+	_, err = repo.CreateRemote(&gitConfig.RemoteConfig{
 		Name: "origin",
-		URLs: []string{pr.Url},
+		URLs: []string{config.RepositoryUrl},
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to create remote %s at %s: %w", pr.Url, pr.HeadSHA, err)
+		return fmt.Errorf("Failed to create remote %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 	}
 
-	err = c.UpdateRepo(ctx, pr)
+	err = c.UpdateWorkspace(ctx, path, pr)
 	if err == CancelLoopErr {
 		return CancelLoopErr
 	} else if err != nil {
@@ -88,25 +85,30 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) error {
 	return nil
 }
 
-func (c *GithubClient) UpdateRepo(ctx context.Context, pr types.PullRequest) error {
+func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error {
 	// fetch specific sha
-	err := c.repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteURL: pr.Url,
+	repo, err := git.PlainOpen(wsPath)
+	if err != nil {
+		return fmt.Errorf("Failed to open the repository at %s: %w", wsPath, err)
+	}
+
+	err = repo.FetchContext(ctx, &git.FetchOptions{
+		RemoteURL: config.RepositoryUrl,
 		RefSpecs:  []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
 		Depth:     1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		// attempt to fetch branch - for when "fetch by sha" is disabled
-		err = c.repo.FetchContext(ctx, &git.FetchOptions{
-			RemoteURL: pr.Url,
+		err = repo.FetchContext(ctx, &git.FetchOptions{
+			RemoteURL: config.RepositoryUrl,
 			RefSpecs:  []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/temp-branch", pr.Branch))},
 		})
 		if err != nil {
-			return fmt.Errorf("Failed to fetch commit %s at %s: %w", pr.Url, pr.HeadSHA, err)
+			return fmt.Errorf("Failed to fetch commit %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 		}
 	}
 
-	commit, err := c.repo.CommitObject(plumbing.NewHash(pr.HeadSHA))
+	commit, err := repo.CommitObject(plumbing.NewHash(pr.HeadSHA))
 	if err != nil {
 		return fmt.Errorf("Failed to retrieve commit from repo: %w", err)
 	}
@@ -114,7 +116,7 @@ func (c *GithubClient) UpdateRepo(ctx context.Context, pr types.PullRequest) err
 		return CancelLoopErr
 	}
 
-	_, err = checkoutSHA(c.repo, pr.HeadSHA)
+	_, err = checkoutSHA(repo, pr.HeadSHA)
 	if err != nil {
 		return fmt.Errorf("Failed to checkout the sha: %w", err)
 	}

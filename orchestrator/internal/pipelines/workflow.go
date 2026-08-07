@@ -22,14 +22,22 @@ type Workflow struct {
 	currentTestsPath string // TODO: Save the tests to a seperate folder or have the ai engine send the final version at the end
 }
 
-type Job uint
-
 const (
-	OPEN Job = iota
+	OPEN = iota
 	CLOSE
 	SYNC
 	RUN_TESTS
 )
+
+type Job struct {
+	// Can be one of:
+	// - OPEN
+	// - CLOSE
+	// - SYNC
+	// - RUN_TESTS
+	JobType uint
+	Data []byte // optional
+}
 
 // Creates a new workflow. Path and cleanup function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
@@ -54,7 +62,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 		case <-ctx.Done():
 			return nil
 		case job := <-wf.Jobs:
-			switch job {
+			switch job.JobType {
 			case OPEN:
 				p, clean, err := wstools.InitWorkspace(ctx, wf.pullReq, &wstools.GithubClient{})
 				wf.path = p
@@ -78,7 +86,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 
 			case RUN_TESTS:
 				// TODO: insert tests from rag pipeline
-				err := wstools.InsertTests()
+				err := wstools.InsertTests(job.Data, true, nil)
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue

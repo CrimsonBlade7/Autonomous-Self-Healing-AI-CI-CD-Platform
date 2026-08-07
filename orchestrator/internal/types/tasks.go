@@ -1,0 +1,98 @@
+package types
+
+import (
+	"encoding/json"
+	"fmt"
+)
+
+// A Task can be one of:
+// - PushNotification
+// - AIEngineResponse
+// - PullRequest
+type Task interface {
+	TaskType()
+}
+
+// The response from the AI Engine.
+// Response should come with a HMAC-Signature-256 header.
+// Contains the tests and the summary.
+type AIEngineResponse struct {
+	Wfid uint
+	Done bool
+	// Tests are included if the workflow needs to continue.
+	// Summary is included only if the workflow is complete.
+	Tests   []byte
+	Summary string
+}
+
+func (aier AIEngineResponse) TaskType()
+
+type PushNotification struct {
+	Branch string
+}
+
+// Populates fields from a byte slice
+func (pn *PushNotification) UnmarshalPushNotification(data []byte) error {
+	var temp struct {
+		PullRequest struct {
+			Head struct {
+				Ref string `json:"ref"`
+			} `json:"head"`
+		} `json:"pull_request"`
+	}
+
+	err := json.Unmarshal(data, &temp)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal json data: %w", err)
+	}
+	pn.Branch = temp.PullRequest.Head.Ref
+	return nil
+}
+
+func (pn PushNotification) TaskType()
+
+type PullRequest struct {
+	Number  uint   `json:"number"`
+	Action  string `json:"action"`
+	Branch  string `json:"branch"`
+	Title   string `json:"title"`
+	Body    string `json:"body"`
+	HeadSHA string `json:"headsha"`
+	BaseSHA string `json:"basesha"`
+}
+
+// Populates fields from a byte slice
+func (pr *PullRequest) UnmarshalPullRequest(data []byte) error {
+	var temp struct {
+		Action      string `json:"action"`
+		Number      uint   `json:"number"`
+		PullRequest struct {
+			Title string `json:"title"`
+			Body  string `json:"body"`
+			Head  struct {
+				Ref string `json:"ref"`
+				Sha string `json:"sha"`
+			} `json:"head"`
+			Base struct {
+				Sha string `json:"sha"`
+			} `json:"base"`
+		} `json:"pull_request"`
+	}
+
+	err := json.Unmarshal(data, &temp)
+	if err != nil {
+		return fmt.Errorf("Failed to unmarshal json data: %w", err)
+	}
+
+	pr.Number = temp.Number
+	pr.Action = temp.Action
+	pr.Branch = temp.PullRequest.Head.Ref
+	pr.Title = temp.PullRequest.Title
+	pr.Body = temp.PullRequest.Body
+	pr.HeadSHA = temp.PullRequest.Head.Sha
+	pr.BaseSHA = temp.PullRequest.Base.Sha
+
+	return nil
+}
+
+func (pr PullRequest) TaskType()

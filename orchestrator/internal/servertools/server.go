@@ -38,6 +38,98 @@ func seconds(n uint) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+// Github webhook handler
+func whHandler(taskChannel chan types.Task) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			slog.Error("Failed to read request body", "error", err)
+			return
+		}
+
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
+		if !verifyMessage(body, config.GithubSecret, realSig) {
+			w.WriteHeader(http.StatusUnauthorized)
+			slog.Warn("Unauthorized request", "warn", err)
+			return
+		}
+
+		action := r.Header.Get("X-GitHub-Event")
+		switch action {
+		case "push":
+			var pn types.PushNotification
+			err = pn.UnmarshalPushNotification(body)
+			if err != nil {
+				slog.Error("Failed to unmsarhsal the push notification", "error", err)
+				return
+			}
+
+			slog.Info("Webhook recieved", "push notification", pn)
+
+			return
+
+		case "pull_request":
+			var pr types.PullRequest
+			err = pr.UnmarshalPullRequest(body)
+			if err != nil {
+				slog.Error("Failed to unmsarhsal the pull request", "error", err)
+				return
+			}
+
+			slog.Info("Webhook recieved", "pull request", pr)
+
+			taskChannel <- &pr
+
+		default:
+			slog.Error("Unsupported webhook action", "action", action)
+			return
+		}
+	}
+}
+
+// Handles responses from the AI Engine and sends response to respChannel.
+func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			slog.Error("Failed to read request body", "error", err)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		realSig := r.Header.Get("HMAC-Signature-256")
+		if !verifyMessage(body, config.AIEngineSecret, realSig) {
+			w.WriteHeader(http.StatusUnauthorized)
+			slog.Warn("Unauthorized request", "warn", err)
+			return
+		}
+
+		var resp types.AIEngineResponse
+		err = json.Unmarshal(body, &resp)
+		if err != nil {
+			w.WriteHeader(http.StatusUnsupportedMediaType)
+			slog.Error("Could not unmarshal the data into a type.Response", "error", err)
+			return
+		}
+
+		taskChannel <- &resp
+	}
+}
+
 // Sends a http request to the AI Engine
 func SendRequestAIEngine(ctx context.Context, msgType string, msg any) error {
 	cli := http.Client{
@@ -71,97 +163,13 @@ func SendRequestAIEngine(ctx context.Context, msgType string, msg any) error {
 	return nil
 }
 
-// Github webhook handler
-func whHandler(ctx context.Context, prChannel chan types.PullRequest) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			slog.Error("Failed to read request body", "error", err)
-			return
-		}
-
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			slog.Error("Not a post request", "error", err)
-			return
-		}
-
-		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
-		if !verifyMessage(body, config.GithubSecret, realSig) {
-			w.WriteHeader(http.StatusUnauthorized)
-			slog.Warn("Unauthorized request", "warn", err)
-			return
-		}
-
-		action := r.Header.Get("X-GitHub-Event")
-		switch action {
-		case "push":
-			SendRequestAIEngine(ctx, "Push-Notification", nil)
-			return
-
-		case "pull_request":
-			var pullRequest types.PullRequest
-			err = pullRequest.UnmarshalJSON(body)
-			if err != nil {
-				slog.Error("Failed to unmsarhsal the json", "error", err)
-				return
-			}
-
-			slog.Info("Job recieved", "pull request", pullRequest)
-
-			prChannel <- pullRequest
-
-		default:
-			slog.Error("Unsupported webhook action", "action", action)
-			return
-		}
-	}
-}
-
-// Handles responses from the AI Engine and sends response to respChannel.
-func aiEngineResponseHandler(respChannel chan types.Response) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			slog.Error("Failed to read request body", "error", err)
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			slog.Error("Not a post request", "error", err)
-			return
-		}
-
-		realSig := r.Header.Get("HMAC-Signature-256")
-		if !verifyMessage(body, config.AIEngineSecret, realSig) {
-			w.WriteHeader(http.StatusUnauthorized)
-			slog.Warn("Unauthorized request", "warn", err)
-			return
-		}
-
-		var resp types.Response
-		err = json.Unmarshal(body, &resp)
-		if err != nil {
-			w.WriteHeader(http.StatusUnsupportedMediaType)
-			slog.Error("Could not unmarshal the data into a type.Response", "error", err)
-			return
-		}
-
-		respChannel <- resp
-	}
-}
-
 // Starts the http server.
-func StartServer(ctx context.Context, prChannel chan types.PullRequest, respChannel chan types.Response) error {
+func StartServer(ctx context.Context, taskChannel chan types.Task) error {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(ctx, prChannel)))
-	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(respChannel)))
+	mux.Handle("/", http.HandlerFunc(whHandler(taskChannel)))
+	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(taskChannel)))
 
 	port := fmt.Sprintf(":%s", config.Port)
 	server := &http.Server{

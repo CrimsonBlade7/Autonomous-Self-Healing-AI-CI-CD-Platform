@@ -18,8 +18,7 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
-	prChannel := make(chan types.PullRequest)
-	respChannel := make(chan types.Response)
+	taskChannel := make(chan types.Task)
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
@@ -42,11 +41,11 @@ func main() {
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, prChannel, respChannel)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
 
 	go func() {
 		// TODO: add patch channel
-		err = servertools.StartServer(mainCtx, prChannel, respChannel)
+		err = servertools.StartServer(mainCtx, taskChannel)
 		if err != nil {
 			slog.Error("Server failure", "error", err)
 			return
@@ -64,14 +63,9 @@ TODO List:
 		- update workspace
 		- if patches for the wrong sha are received, discard them
 	- handle max test patching attempts
-	- * make whole repository aware
-		- change webhook to trigger on push to main
-		- handle updates to main
-		- save the whole repo
-		- make a snapshot at a pr
-		- if a push arrives during a workflow, scrap the current job using context cancel on sync
 	- figure out delivery mechanisms
 		- tests: http body
 		- logs: http body
 		- repo: path + id + etc and shared volume for persistance
+	- handle hanging workflows due to errors
 */

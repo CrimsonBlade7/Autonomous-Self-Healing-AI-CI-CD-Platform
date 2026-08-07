@@ -13,7 +13,7 @@ import (
 type GitClient interface {
 	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
 	CommitPush(commitMsg, wsPath, branch, sha string) error
-	UpdateRepo(ctx context.Context, pr types.PullRequest) error
+	UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error
 }
 
 // Creates a unique temp directory in workspaceDir
@@ -74,6 +74,8 @@ func ClearWorkspaces() error {
 }
 
 // TODO: placeholder
-func InsertTests() error {
+// Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
+// If a test name does not exist, it will be logged, but no errors will be returned.
+func InsertTests(data []byte, all bool, testNames []string) error {
 	return nil // stub
 }

@@ -86,9 +86,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
-		HostConfig: &container.HostConfig{
-			AutoRemove: true,
-		},
+		HostConfig: &container.HostConfig{},
 		Name:  tag,
 		Image: tag,
 	})
@@ -125,6 +123,11 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 		slog.Info("Container completed")
 	case err = <-response.Error:
 		slog.Error("Container error", "error", err)
+	}
+
+	cm.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("Failed to remove container: %w", err)
 	}
 
 	return logs, nil
