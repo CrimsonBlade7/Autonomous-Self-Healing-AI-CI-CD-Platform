@@ -15,9 +15,9 @@ import (
 type Workflow struct {
 	wfid             uint // The pr number
 	pullReq          types.PullRequest
-	path             string
 	Jobs             chan Job
-	cleanup          func() error
+	path             string       // Path to the associated workspace
+	cleanWs          func() error // Removes the workspace at path
 	AttemptNum       uint
 	currentTestsPath string // TODO: Save the tests to a seperate folder or have the ai engine send the final version at the end
 }
@@ -36,16 +36,17 @@ type Job struct {
 	// - SYNC
 	// - RUN_TESTS
 	JobType uint
-	Data []byte // optional
+	Data    []byte // optional
 }
 
-// Creates a new workflow. Path and cleanup function are are uninitialized by default.
+// Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
 func newWorkflow(pr types.PullRequest) (*Workflow, error) {
 	wf := Workflow{
-		wfid:    pr.Number,
-		pullReq: pr,
-		Jobs:    make(chan Job),
+		wfid:       pr.Number,
+		pullReq:    pr,
+		Jobs:       make(chan Job),
+		AttemptNum: 0,
 	}
 
 	return &wf, nil
@@ -60,13 +61,14 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 	for {
 		select {
 		case <-ctx.Done():
+
 			return nil
 		case job := <-wf.Jobs:
 			switch job.JobType {
 			case OPEN:
 				p, clean, err := wstools.InitWorkspace(ctx, wf.pullReq, &wstools.GithubClient{})
 				wf.path = p
-				wf.cleanup = clean
+				wf.cleanWs = clean
 				if err != nil {
 					cleanerr := clean()
 					if cleanerr != nil {

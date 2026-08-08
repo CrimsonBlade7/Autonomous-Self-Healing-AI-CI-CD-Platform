@@ -10,16 +10,21 @@ import (
 	"github.com/moby/moby/client"
 )
 
+type WorkflowObject struct {
+	wf     *Workflow
+	cancel func() error
+}
+
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
-	workflows map[uint]*Workflow
+	workflows map[uint]*WorkflowObject
 	mu        sync.RWMutex
 }
 
 // Creates a new workflow manager.
 func NewWorkflowManager() WorkflowManager {
 	return WorkflowManager{
-		workflows: make(map[uint]*Workflow),
+		workflows: make(map[uint]*WorkflowObject),
 		mu:        sync.RWMutex{},
 	}
 }
@@ -28,13 +33,15 @@ func (wfm *WorkflowManager) Get(key uint) (*Workflow, bool) {
 	wfm.mu.RLock()
 	defer wfm.mu.RUnlock()
 	val, ok := wfm.workflows[key]
-	return val, ok
+	return val.wf, ok
 }
 
-func (wfm *WorkflowManager) Set(key uint, wfp *Workflow) {
+func (wfm *WorkflowManager) Set(key uint, workf *Workflow) {
 	wfm.mu.Lock()
 	defer wfm.mu.Unlock()
-	wfm.workflows[key] = wfp
+	wfm.workflows[key] = WorkflowObject{
+		wf: workf,
+		
 }
 
 func (wfm *WorkflowManager) Remove(key uint) {
@@ -62,14 +69,14 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 				wf := wfm.workflows[t.Wfid]
 				if t.Done {
 					// TODO: handle canceling workflows
-					err := wf.cleanup()
+					err := wf.cleanWs()
 					if err != nil {
 						slog.Error("Failed to clean up workflow", "error", err)
 					}
 				} else {
 					wf.Jobs <- Job{
 						JobType: RUN_TESTS,
-						Data: t.Tests,
+						Data:    t.Tests,
 					}
 				}
 
@@ -87,32 +94,32 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 	switch pr.Action {
 	case "opened":
 		num := pr.Number
-		wfp, ok := wfm.Get(num)
+		wf, ok := wfm.Get(num)
 		if !ok {
 			// Creates and starts a new workflow for a new pr
-			wfp, err := newWorkflow(pr)
+			wf, err := newWorkflow(pr)
 			if err != nil {
 				return fmt.Errorf("Failed to create a new workflow: %w", err)
 			}
-			wfm.Set(num, wfp)
+			wfm.Set(num, wf)
 			go func() {
 				defer wfm.Remove(num)
 				subCtx, cancel := context.WithCancel(ctx)
 				defer cancel()
-				err := wfp.runWorkflow(subCtx, cli)
+				err := wf.runWorkflow(subCtx, cli)
 				if err != nil {
 					slog.Error("Workflow failed", "error", err)
 					cancel()
 				}
 			}()
-			wfp.Jobs <- Job{JobType: OPEN}
+			wf.Jobs <- Job{JobType: OPEN}
 		} else {
 			// Updates an existing workflow
 			if pr.Action == "syncronize" {
 
 			}
-			wfp.update(pr)
-			wfp.Jobs <- Job{JobType: SYNC}
+			wf.update(pr)
+			wf.Jobs <- Job{JobType: SYNC}
 		}
 	case "closed":
 	case "reopened":

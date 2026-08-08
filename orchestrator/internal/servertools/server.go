@@ -73,8 +73,7 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 			}
 
 			slog.Info("Webhook recieved", "push notification", pn)
-
-			return
+			taskChannel <- &pn
 
 		case "pull_request":
 			var pr types.PullRequest
@@ -85,7 +84,6 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 			}
 
 			slog.Info("Webhook recieved", "pull request", pr)
-
 			taskChannel <- &pr
 
 		default:
