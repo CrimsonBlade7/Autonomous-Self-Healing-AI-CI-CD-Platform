@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,7 +38,6 @@ func verifyMessage(message []byte, secret, signature string) bool {
 func seconds(n uint) time.Duration {
 	return time.Duration(n) * time.Second
 }
-
 
 func getSender(data []byte) (string, error) {
 	type senderOnly struct {
@@ -77,46 +77,33 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 			slog.Warn("Unauthorized request", "warn", err)
 			return
 		}
-		
+
 		sender, err := getSender(body)
 		if err != nil {
 			slog.Error("Failed to get the webhook sender", "error", err)
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if  sender == config.GithubBotLogin {
+		if sender == config.GithubBotLogin {
 			slog.Info("Webhook originates from this platform")
 			return
 		}
 
-		action := r.Header.Get("X-GitHub-Event")
-		switch action {
-		case "push":
-			var pn types.PushNotification
-			err = pn.UnmarshalPushNotification(body)
-			if err != nil {
-				slog.Error("Failed to unmsarhsal the push notification", "error", err)
-				return
-			}
-
-			slog.Info("Webhook recieved", "push notification", pn)
-			taskChannel <- &pn
-
-		case "pull_request":
-			var pr types.PullRequest
-			err = pr.UnmarshalpullRequest(body)
-			if err != nil {
-				slog.Error("Failed to unmsarhsal the pull request", "error", err)
-				return
-			}
-
-			slog.Info("Webhook recieved", "pull request", pr)
-			taskChannel <- &pr
-
-		default:
-			slog.Error("Unsupported webhook action", "action", action)
+		if r.Header.Get("X-GitHub-Event") != "pull_request" {
+			slog.Error("Not a pull request")
 			return
 		}
+
+		var pr types.PullRequest
+		err = pr.UnmarshalpullRequest(body)
+		if err != nil {
+			slog.Error("Failed to unmsarhsal the pull request", "error", err)
+			return
+		}
+
+		slog.Info("Webhook recieved", "pull request", pr)
+		taskChannel <- &pr
+
 	}
 }
 
@@ -155,16 +142,27 @@ func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
 	}
 }
 
-// Sends a http request to the AI Engine
-func SendRequestAIEngine(ctx context.Context, msgType string, msg any) error {
-	cli := http.Client{
-		Timeout: seconds(10),
+// Sends a http request to the AI Engine.
+// jobType can be one of:
+// - open: start a workflow when a pr opens
+// - close: close and merge implied; end associated workflow and update rag index
+// - update_pr: update pr information
+func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) error {
+	validJobTypes := []string{
+		"open",
+		"close",
+		"update_pr",
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, seconds(5))
-	defer cancel()
+	if !slices.Contains(validJobTypes, jobType) {
+		return fmt.Errorf("Invalid job type")
+	}
 
-	msgBytes, err := json.Marshal(msg)
+	cli := http.Client{
+		Timeout: seconds(config.AIEngineRequestTimeout),
+	}
+
+	msgBytes, err := json.Marshal(req)
 	if err != nil {
 		return fmt.Errorf("Failed to marshal the message package: %w", err)
 	}
@@ -175,7 +173,7 @@ func SendRequestAIEngine(ctx context.Context, msgType string, msg any) error {
 	}
 
 	httpReq.Header.Set("Accept", "application/json")
-	httpReq.Header.Set("Message-Type", msgType)
+	httpReq.Header.Set("Job-Type", jobType)
 
 	resp, err := cli.Do(httpReq)
 	if err != nil {

@@ -17,35 +17,35 @@ type WorkflowObject struct {
 
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
-	workflows map[uint]*WorkflowObject
+	idMap     map[uint]WorkflowObject
 	mutex     sync.RWMutex
 }
 
 // Creates a new workflow manager.
-func NewWorkflowManager() WorkflowManager {
-	return WorkflowManager{
-		workflows: make(map[uint]*WorkflowObject),
+func NewWorkflowManager() *WorkflowManager {
+	return &WorkflowManager{
+		idMap:     make(map[uint]WorkflowObject),
 		mutex:     sync.RWMutex{},
 	}
 }
 
-func (wfm *WorkflowManager) Get(key uint) (*WorkflowObject, bool) {
+func (wfm *WorkflowManager) Get(id uint) (WorkflowObject, bool) {
 	wfm.mutex.RLock()
 	defer wfm.mutex.RUnlock()
-	val, ok := wfm.workflows[key]
-	return val, ok
+	val, exists := wfm.idMap[id]
+	return val, exists
 }
 
-func (wfm *WorkflowManager) Set(key uint, wo *WorkflowObject) {
+func (wfm *WorkflowManager) Set(id uint, wo WorkflowObject) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
-	wfm.workflows[key] = wo
+	wfm.idMap[id] = wo
 }
 
-func (wfm *WorkflowManager) Remove(key uint) {
+func (wfm *WorkflowManager) Remove(id uint) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
-	delete(wfm.workflows, key)
+	delete(wfm.idMap, id)
 }
 
 // Starts the run pipeline. Handles incoming workflows.
@@ -55,7 +55,6 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 		case <-ctx.Done():
 			return
 		case task := <-taskChannel:
-
 			switch t := task.(type) {
 			case types.PullRequest:
 				err := wfm.handlePullRequest(ctx, cli, t)
@@ -64,38 +63,35 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 				}
 
 			case types.AIEngineResponse:
-				wf := wfm.workflows[t.Wfid].workflow
+				wfo, exists := wfm.Get(t.Wfid)
+				if !exists {
+					slog.Error("Workflow ID does not exist", "ID", t.Wfid)
+					continue
+				}
 				if t.Done {
-					// TODO: handle canceling workflows
-					err := wf.cleanWs()
-					if err != nil {
-						slog.Error("Failed to clean up workflow", "error", err)
-					}
+					wfo.workflow.Jobs <- Job{JobType: COMMIT_PUSH}
 				} else {
-					wf.Jobs <- Job{
+					wfo.workflow.Jobs <- Job{
 						JobType: RUN_TESTS,
 						Data:    t.Tests,
 					}
 				}
 
-			case types.PushNotification:
 			default:
 				panic(fmt.Sprintf("Unsupported task: %T", t))
 			}
-			// TODO: handle different types of prs
-
 		}
 	}
 }
 
 func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) error {
 	num := pr.Number
-	wfo, ok := wfm.Get(num)
+	wfo, exists := wfm.Get(num)
 	wf := wfo.workflow
 	switch pr.Action {
 	case "opened":
 		// Creates and starts a new workflow for a new pr
-		if ok {
+		if exists {
 			panic(fmt.Sprintf("Duplicate workflow: %v", num))
 		}
 		nwf, err := newWorkflow(pr)
@@ -103,7 +99,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
 		}
 		subCtx, end := context.WithCancel(ctx)
-		wfm.Set(num, &WorkflowObject{
+		wfm.Set(num, WorkflowObject{
 			workflow: nwf,
 			cancel:   end,
 		})
@@ -124,9 +120,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 			wfm.Remove(num)
 		}
 		wf.Jobs <- Job{JobType: CLOSE}
+
 	case "reopened":
 		subCtx, end := context.WithCancel(ctx)
-		wfm.Set(num, &WorkflowObject{
+		wfm.Set(num, WorkflowObject{
 			workflow: wf,
 			cancel:   end,
 		})
@@ -141,13 +138,12 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		}()
 		wf.Jobs <- Job{JobType: OPEN}
 
-	case "edited":
+	case "edited", "synchronize":
 		wf.Jobs <- Job{
-			JobType: EDIT,
+			JobType: UPDATE_PR,
 			Task:    pr,
 		}
-	case "synchronize":
-		wf.Jobs <- Job{JobType: SYNC}
+
 	default:
 		slog.Info("Unsupported pull request action", "action", pr.Action)
 	}

@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/dockertools"
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/servertools"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/wstools"
 	"github.com/moby/moby/client"
@@ -18,25 +20,25 @@ type Workflow struct {
 	Jobs             chan Job
 	path             string       // Path to the associated workspace
 	cleanWs          func() error // Removes the workspace at path
-	AttemptNum       uint
+	attemptNum       uint
 	currentTestsPath string // TODO: Save the tests to a seperate folder or have the ai engine send the final version at the end
 }
 
 const (
 	OPEN = iota
 	CLOSE
-	SYNC
-	EDIT
+	UPDATE_PR
 	RUN_TESTS
+	COMMIT_PUSH
 )
 
 type Job struct {
 	// Can be one of:
 	// - OPEN
 	// - CLOSE
-	// - SYNC
-	// - EDIT
+	// - UPDATE_PR
 	// - RUN_TESTS
+	// - COMMIT_PUSH
 	JobType uint
 	Task    types.Task // optional
 	Data    []byte     // optional
@@ -49,7 +51,7 @@ func newWorkflow(pr types.PullRequest) (*Workflow, error) {
 		wfid:        pr.Number,
 		pullRequest: pr,
 		Jobs:        make(chan Job),
-		AttemptNum:  0,
+		attemptNum:  0,
 	}
 
 	return &wf, nil
@@ -65,9 +67,8 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 		case job := <-wf.Jobs:
 			switch job.JobType {
 			case OPEN:
-				p, clean, err := wstools.InitWorkspace(ctx, wf.pullRequest, &wstools.GithubClient{})
-				wf.path = p
-				wf.cleanWs = clean
+				wf.attemptNum = 0
+				path, clean, err := wstools.InitWorkspace(ctx, wf.pullRequest, &wstools.GithubClient{})
 				if err != nil {
 					cleanerr := clean()
 					if cleanerr != nil {
@@ -75,24 +76,47 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					}
 					return fmt.Errorf("Failed to create a temporary workspace: %w", err)
 				}
+				wf.path = path
+				wf.cleanWs = clean
 
-				// TODO: handoff to send http request
+				err = servertools.SendRequestAIEngine(ctx, "open", types.AIEngineRequest{
+					Wfid:        wf.wfid,
+					PullRequest: wf.pullRequest,
+				})
+				if err != nil {
+					return fmt.Errorf("Failed to send request to ai engine: %w", err)
+				}
 
 			case CLOSE:
-				// TODO: implement close pr
+				err := wf.cleanWs()
+				if err != nil {
+					return fmt.Errorf("Failed to clean up workspace: %w", err)
+				}
+				err = servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid})
+				if err != nil {
+					return fmt.Errorf("Failed to send request to ai engine: %w", err)
+				}
 				return nil
 
-			case SYNC:
-				// TODO: implement sync job
+			case UPDATE_PR:
+				wf.attemptNum = 0
 				pr, ok := job.Task.(types.PullRequest)
 				if !ok {
-					panic("Edit should always come from a pull request.")
+					panic("Sync should always come from a pull request.")
 				}
 				wf.pullRequest = pr
+				err := servertools.SendRequestAIEngine(ctx, "sync", types.AIEngineRequest{Wfid: wf.wfid})
+				if err != nil {
+					return fmt.Errorf("Failed to send request to ai engine: %w", err)
+				}
 
 			case RUN_TESTS:
 				// TODO: insert tests from rag pipeline
-				err := wstools.InsertTests(job.Data, true, nil)
+				if wf.attemptNum > config.MaxTestPatchingAttempts {
+					return fmt.Errorf("Test generation failed: too many attempts")
+				}
+				wf.attemptNum++
+				err := wstools.InsertTests(wf.path, job.Data, true, nil)
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue
@@ -113,13 +137,6 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 
 				// TODO: return logs
 
-			case EDIT:
-				pr, ok := job.Task.(types.PullRequest)
-				if !ok {
-					panic("Edit should always come from a pull request.")
-				}
-				wf.pullRequest = pr
-
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))
 			}
@@ -130,7 +147,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 func (wf *Workflow) GetWfid() uint {
 	return wf.wfid
 }
-func (wf *Workflow) GetpullRequest() types.PullRequest {
+func (wf *Workflow) GetPullRequest() types.PullRequest {
 	return wf.pullRequest
 }
 func (wf *Workflow) GetPath() string {

@@ -6,7 +6,6 @@ import (
 )
 
 // A Task can be one of:
-// - PushNotification
 // - AIEngineResponse
 // - pullRequest
 type Task interface {
@@ -26,30 +25,6 @@ type AIEngineResponse struct {
 }
 
 func (aier AIEngineResponse) TaskType()
-
-type PushNotification struct {
-	Branch string
-}
-
-// Populates fields from a byte slice
-func (pn *PushNotification) UnmarshalPushNotification(data []byte) error {
-	var temp struct {
-		PullRequest struct {
-			Head struct {
-				Ref string `json:"ref"`
-			} `json:"head"`
-		} `json:"pull_request"`
-	}
-
-	err := json.Unmarshal(data, &temp)
-	if err != nil {
-		return fmt.Errorf("Failed to unmarshal json data: %w", err)
-	}
-	pn.Branch = temp.PullRequest.Head.Ref
-	return nil
-}
-
-func (pn PushNotification) TaskType()
 
 type PullRequest struct {
 	Number  uint   `json:"number"`
@@ -77,7 +52,7 @@ func (pr *PullRequest) UnmarshalpullRequest(data []byte) error {
 			Base struct {
 				Sha string `json:"sha"`
 			} `json:"base"`
-			Merged bool `json"merged"`
+			Merged bool `json:"merged"`
 		} `json:"pull_request"`
 	}
 

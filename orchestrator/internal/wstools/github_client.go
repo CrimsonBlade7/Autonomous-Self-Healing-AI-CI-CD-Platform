@@ -10,12 +10,9 @@ import (
 	"github.com/go-git/go-git/v6"
 	gitConfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
-	"github.com/go-git/go-git/v6/plumbing/object"
 )
 
 type GithubClient struct{}
-
-var CancelLoopErr error = errors.New("This commit originates from this platform. Pull canceled to prevent infinite loops.")
 
 // Initializes the repository at path. Returns CancelLoopErr if the committer was this service to prevent infinite loops.
 func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) error {
@@ -33,9 +30,7 @@ func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullR
 	}
 
 	err = c.UpdateWorkspace(ctx, path, pr)
-	if err == CancelLoopErr {
-		return CancelLoopErr
-	} else if err != nil {
+	if err != nil {
 		return fmt.Errorf("Failed to update the workspace: %w", err)
 	}
 
@@ -58,12 +53,6 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) error {
 	if err != nil {
 		return fmt.Errorf("Failed to add changes: %w", err)
 	}
-
-	wt.Commit(commitMsg, &git.CommitOptions{
-		Author: &object.Signature{
-			Name: config.BotName,
-		},
-	})
 
 	remote, err := repo.Remote("origin")
 	if err != nil {
@@ -106,14 +95,6 @@ func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr ty
 		if err != nil {
 			return fmt.Errorf("Failed to fetch commit %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 		}
-	}
-
-	commit, err := repo.CommitObject(plumbing.NewHash(pr.HeadSHA))
-	if err != nil {
-		return fmt.Errorf("Failed to retrieve commit from repo: %w", err)
-	}
-	if commit.Committer.Name == config.BotName {
-		return CancelLoopErr
 	}
 
 	_, err = checkoutSHA(repo, pr.HeadSHA)
