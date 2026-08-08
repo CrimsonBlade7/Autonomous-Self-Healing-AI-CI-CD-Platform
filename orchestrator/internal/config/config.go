@@ -14,8 +14,8 @@ var RepoDir string // The directory that contains the repository root.
 var WsDir string   // The directory that contains all workspaces.
 var RepositoryUrl string
 var GithubSecret string
+var GithubBotLogin string
 var Port string
-var BotName string = "ci-cd-bot"
 var AIEngineSecret string
 var AIEnginePort string
 var ServerShutdownTimeLimit uint = 30
@@ -40,6 +40,10 @@ func loadEnv() error {
 	GithubSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if GithubSecret == "" {
 		return fmt.Errorf("Secret is empty.")
+	}
+	GithubBotLogin = os.Getenv("GITHUB_BOT_LOGIN")
+	if GithubBotLogin == "" {
+		return fmt.Errorf("Bot login is empty.")
 	}
 	Port = os.Getenv("PORT")
 	if Port == "" {

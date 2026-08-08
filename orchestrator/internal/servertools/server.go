@@ -38,6 +38,22 @@ func seconds(n uint) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+
+func getSender(data []byte) (string, error) {
+	type senderOnly struct {
+		Sender struct {
+			Login string `json:"login"`
+		} `json:"sender"`
+	}
+
+	var temp senderOnly
+	err := json.Unmarshal(data, &temp)
+	if err != nil {
+		return "", fmt.Errorf("Failed to unmarshal data: %w", err)
+	}
+	return temp.Sender.Login, nil
+}
+
 // Github webhook handler
 func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +75,17 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 		if !verifyMessage(body, config.GithubSecret, realSig) {
 			w.WriteHeader(http.StatusUnauthorized)
 			slog.Warn("Unauthorized request", "warn", err)
+			return
+		}
+		
+		sender, err := getSender(body)
+		if err != nil {
+			slog.Error("Failed to get the webhook sender", "error", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if  sender == config.GithubBotLogin {
+			slog.Info("Webhook originates from this platform")
 			return
 		}
 
