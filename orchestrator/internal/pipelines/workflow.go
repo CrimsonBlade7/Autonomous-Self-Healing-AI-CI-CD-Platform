@@ -14,7 +14,7 @@ import (
 
 type Workflow struct {
 	wfid             uint // The pr number
-	pullReq          types.PullRequest
+	pullRequest      types.PullRequest
 	Jobs             chan Job
 	path             string       // Path to the associated workspace
 	cleanWs          func() error // Removes the workspace at path
@@ -26,6 +26,7 @@ const (
 	OPEN = iota
 	CLOSE
 	SYNC
+	EDIT
 	RUN_TESTS
 )
 
@@ -34,26 +35,24 @@ type Job struct {
 	// - OPEN
 	// - CLOSE
 	// - SYNC
+	// - EDIT
 	// - RUN_TESTS
 	JobType uint
-	Data    []byte // optional
+	Task    types.Task // optional
+	Data    []byte     // optional
 }
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
 func newWorkflow(pr types.PullRequest) (*Workflow, error) {
 	wf := Workflow{
-		wfid:       pr.Number,
-		pullReq:    pr,
-		Jobs:       make(chan Job),
-		AttemptNum: 0,
+		wfid:        pr.Number,
+		pullRequest: pr,
+		Jobs:        make(chan Job),
+		AttemptNum:  0,
 	}
 
 	return &wf, nil
-}
-
-func (wf *Workflow) update(pr types.PullRequest) {
-	wf.pullReq = pr
 }
 
 // Starts the job pipeline. Handles incoming jobs.
@@ -66,7 +65,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 		case job := <-wf.Jobs:
 			switch job.JobType {
 			case OPEN:
-				p, clean, err := wstools.InitWorkspace(ctx, wf.pullReq, &wstools.GithubClient{})
+				p, clean, err := wstools.InitWorkspace(ctx, wf.pullRequest, &wstools.GithubClient{})
 				wf.path = p
 				wf.cleanWs = clean
 				if err != nil {
@@ -85,6 +84,11 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 
 			case SYNC:
 				// TODO: implement sync job
+				pr, ok := job.Task.(types.PullRequest)
+				if !ok {
+					panic("Edit should always come from a pull request.")
+				}
+				wf.pullRequest = pr
 
 			case RUN_TESTS:
 				// TODO: insert tests from rag pipeline
@@ -94,8 +98,8 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					continue
 				}
 				nameFormatter := strings.NewReplacer("/", "-", "|", "-", "<", "-", ">", "-", "\"", "-")
-				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullReq.Branch, wf.wfid))
-				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullReq.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
+				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullRequest.Branch, wf.wfid))
+				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
 				if err != nil {
 					slog.Error("Failed to build image", "error", err)
 					continue
@@ -109,6 +113,13 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 
 				// TODO: return logs
 
+			case EDIT:
+				pr, ok := job.Task.(types.PullRequest)
+				if !ok {
+					panic("Edit should always come from a pull request.")
+				}
+				wf.pullRequest = pr
+
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))
 			}
@@ -119,8 +130,8 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 func (wf *Workflow) GetWfid() uint {
 	return wf.wfid
 }
-func (wf *Workflow) GetPullRequest() types.PullRequest {
-	return wf.pullReq
+func (wf *Workflow) GetpullRequest() types.PullRequest {
+	return wf.pullRequest
 }
 func (wf *Workflow) GetPath() string {
 	return wf.path

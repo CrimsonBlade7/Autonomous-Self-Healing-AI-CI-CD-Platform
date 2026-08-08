@@ -77,7 +77,7 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 
 		case "pull_request":
 			var pr types.PullRequest
-			err = pr.UnmarshalPullRequest(body)
+			err = pr.UnmarshalpullRequest(body)
 			if err != nil {
 				slog.Error("Failed to unmsarhsal the pull request", "error", err)
 				return

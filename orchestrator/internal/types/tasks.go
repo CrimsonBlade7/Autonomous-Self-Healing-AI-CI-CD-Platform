@@ -8,7 +8,7 @@ import (
 // A Task can be one of:
 // - PushNotification
 // - AIEngineResponse
-// - PullRequest
+// - pullRequest
 type Task interface {
 	TaskType()
 }
@@ -59,10 +59,11 @@ type PullRequest struct {
 	Body    string `json:"body"`
 	HeadSHA string `json:"headsha"`
 	BaseSHA string `json:"basesha"`
+	Merged  bool   `json:"merged"`
 }
 
 // Populates fields from a byte slice
-func (pr *PullRequest) UnmarshalPullRequest(data []byte) error {
+func (pr *PullRequest) UnmarshalpullRequest(data []byte) error {
 	var temp struct {
 		Action      string `json:"action"`
 		Number      uint   `json:"number"`
@@ -76,6 +77,7 @@ func (pr *PullRequest) UnmarshalPullRequest(data []byte) error {
 			Base struct {
 				Sha string `json:"sha"`
 			} `json:"base"`
+			Merged bool `json"merged"`
 		} `json:"pull_request"`
 	}
 
@@ -91,6 +93,7 @@ func (pr *PullRequest) UnmarshalPullRequest(data []byte) error {
 	pr.Body = temp.PullRequest.Body
 	pr.HeadSHA = temp.PullRequest.Head.Sha
 	pr.BaseSHA = temp.PullRequest.Base.Sha
+	pr.Merged = temp.PullRequest.Merged
 
 	return nil
 }

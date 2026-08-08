@@ -11,42 +11,40 @@ import (
 )
 
 type WorkflowObject struct {
-	wf     *Workflow
-	cancel func() error
+	workflow *Workflow
+	cancel   context.CancelFunc
 }
 
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
 	workflows map[uint]*WorkflowObject
-	mu        sync.RWMutex
+	mutex     sync.RWMutex
 }
 
 // Creates a new workflow manager.
 func NewWorkflowManager() WorkflowManager {
 	return WorkflowManager{
 		workflows: make(map[uint]*WorkflowObject),
-		mu:        sync.RWMutex{},
+		mutex:     sync.RWMutex{},
 	}
 }
 
-func (wfm *WorkflowManager) Get(key uint) (*Workflow, bool) {
-	wfm.mu.RLock()
-	defer wfm.mu.RUnlock()
+func (wfm *WorkflowManager) Get(key uint) (*WorkflowObject, bool) {
+	wfm.mutex.RLock()
+	defer wfm.mutex.RUnlock()
 	val, ok := wfm.workflows[key]
-	return val.wf, ok
+	return val, ok
 }
 
-func (wfm *WorkflowManager) Set(key uint, workf *Workflow) {
-	wfm.mu.Lock()
-	defer wfm.mu.Unlock()
-	wfm.workflows[key] = WorkflowObject{
-		wf: workf,
-		
+func (wfm *WorkflowManager) Set(key uint, wo *WorkflowObject) {
+	wfm.mutex.Lock()
+	defer wfm.mutex.Unlock()
+	wfm.workflows[key] = wo
 }
 
 func (wfm *WorkflowManager) Remove(key uint) {
-	wfm.mu.Lock()
-	defer wfm.mu.Unlock()
+	wfm.mutex.Lock()
+	defer wfm.mutex.Unlock()
 	delete(wfm.workflows, key)
 }
 
@@ -66,7 +64,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 				}
 
 			case types.AIEngineResponse:
-				wf := wfm.workflows[t.Wfid]
+				wf := wfm.workflows[t.Wfid].workflow
 				if t.Done {
 					// TODO: handle canceling workflows
 					err := wf.cleanWs()
@@ -91,40 +89,65 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 }
 
 func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) error {
+	num := pr.Number
+	wfo, ok := wfm.Get(num)
+	wf := wfo.workflow
 	switch pr.Action {
 	case "opened":
-		num := pr.Number
-		wf, ok := wfm.Get(num)
-		if !ok {
-			// Creates and starts a new workflow for a new pr
-			wf, err := newWorkflow(pr)
-			if err != nil {
-				return fmt.Errorf("Failed to create a new workflow: %w", err)
-			}
-			wfm.Set(num, wf)
-			go func() {
-				defer wfm.Remove(num)
-				subCtx, cancel := context.WithCancel(ctx)
-				defer cancel()
-				err := wf.runWorkflow(subCtx, cli)
-				if err != nil {
-					slog.Error("Workflow failed", "error", err)
-					cancel()
-				}
-			}()
-			wf.Jobs <- Job{JobType: OPEN}
-		} else {
-			// Updates an existing workflow
-			if pr.Action == "syncronize" {
-
-			}
-			wf.update(pr)
-			wf.Jobs <- Job{JobType: SYNC}
+		// Creates and starts a new workflow for a new pr
+		if ok {
+			panic(fmt.Sprintf("Duplicate workflow: %v", num))
 		}
+		nwf, err := newWorkflow(pr)
+		if err != nil {
+			return fmt.Errorf("Failed to create a new workflow: %w", err)
+		}
+		subCtx, end := context.WithCancel(ctx)
+		wfm.Set(num, &WorkflowObject{
+			workflow: nwf,
+			cancel:   end,
+		})
+		go func() {
+			defer end()
+			defer wfm.Remove(num)
+			err := nwf.runWorkflow(subCtx, cli)
+			if err != nil {
+				slog.Error("Workflow failed", "error", err)
+				end()
+			}
+		}()
+		wf.Jobs <- Job{JobType: OPEN}
+
 	case "closed":
+		wfo.cancel()
+		if pr.Merged {
+			wfm.Remove(num)
+		}
+		wf.Jobs <- Job{JobType: CLOSE}
 	case "reopened":
+		subCtx, end := context.WithCancel(ctx)
+		wfm.Set(num, &WorkflowObject{
+			workflow: wf,
+			cancel:   end,
+		})
+		go func() {
+			defer end()
+			defer wfm.Remove(num)
+			err := wf.runWorkflow(subCtx, cli)
+			if err != nil {
+				slog.Error("Workflow failed", "error", err)
+				end()
+			}
+		}()
+		wf.Jobs <- Job{JobType: OPEN}
+
 	case "edited":
+		wf.Jobs <- Job{
+			JobType: EDIT,
+			Task:    pr,
+		}
 	case "synchronize":
+		wf.Jobs <- Job{JobType: SYNC}
 	default:
 		slog.Info("Unsupported pull request action", "action", pr.Action)
 	}
