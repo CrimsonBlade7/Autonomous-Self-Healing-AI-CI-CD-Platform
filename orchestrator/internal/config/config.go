@@ -8,18 +8,18 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// TODO: figure out which should be in the .env
+var Port string = "8080"
 var RootDir string // The root of this project.
 var RepoDir string // The relative directory that contains the repository root.
 var WsDir string   // The relative directory that contains all workspaces.
+var GithubToken string
 var RepositoryUrl string
 var GithubSecret string
 var GithubBotLogin string
-var Port string
 var AIEngineSecret string
 var AIEnginePort string
 var AIEngineRequestTimeout uint = 5
-var ServerShutdownTimeLimit uint = 30
+var ServerShutdownTimeout uint = 30
 var ReadHeaderTimeout uint = 2
 var WriteTimeout uint = 5
 var MaxTestPatchingAttempts uint = 10
@@ -35,30 +35,35 @@ func loadEnv() error {
 	if err != nil {
 		return fmt.Errorf("Failed to load .env file: %w", err)
 	}
+	GithubToken = os.Getenv("GITHUB_TOKEN")
+	if GithubToken == "" {
+		return fmt.Errorf("Github token is empty.")
+	}
 	RepositoryUrl = os.Getenv("GITHUB_REPOSITORY_URL")
 	if RepositoryUrl == "" {
 		return fmt.Errorf("Repository url is empty.")
 	}
 	GithubSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if GithubSecret == "" {
-		return fmt.Errorf("Secret is empty.")
+		return fmt.Errorf("Github secret is empty.")
 	}
 	GithubBotLogin = os.Getenv("GITHUB_BOT_LOGIN")
 	if GithubBotLogin == "" {
-		return fmt.Errorf("Bot login is empty.")
+		return fmt.Errorf("Github bot login is empty.")
 	}
 	Port = os.Getenv("PORT")
 	if Port == "" {
 		return fmt.Errorf("Port is empty.")
 	}
 	AIEngineSecret = os.Getenv("AI_ENGINE_SECRET")
-	if AIEnginePort == "" {
-		return fmt.Errorf("AI Engine secret is empty.")
+	if AIEngineSecret == "" {
+		return fmt.Errorf("AI engine secret is empty.")
 	}
 	AIEnginePort = os.Getenv("AI_ENGINE_PORT")
 	if AIEnginePort == "" {
-		return fmt.Errorf("AI Engine url is empty.")
+		return fmt.Errorf("AI engine port is empty.")
 	}
+
 	return nil
 }
 
