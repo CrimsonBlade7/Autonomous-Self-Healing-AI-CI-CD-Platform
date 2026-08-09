@@ -99,11 +99,7 @@ The full operational capabilities of the agent can be mapped across three distin
 1.  **AI Orchestration:** The **RAG Pipeline** sends the context-rich prompt matrix directly into the **Test Author**.
 2.  **Test Synthesis:** The underlying AI model evaluates the failure, forms a hypothesis about the underlying defect, and authors new test code — or refines tests it previously wrote — designed to reproduce, isolate, and characterize the failing behavior. It does not touch, diff, or otherwise modify the application's existing source files.
 3.  **Report Delivery:** Once Celery finishes running the authored tests and compiling results, the Python service POSTs a structured summary report directly to a dedicated Go endpoint (**`/ai-callback`**), including the same workflow ID so Go can correlate the report with the correct pipeline run. The report covers what was investigated, the tests written, which passed/failed, and recommended fixes framed as suggestions for a human to review — not as an applied change. Because a plain HTTP request has no delivery guarantee if Go is briefly unreachable (e.g. mid-restart), this callback includes retry-with-backoff logic on the Python side.
-4.  **Report Surfacing:** The Go Orchestrator receives the summary report and makes it available for human review — e.g., posting it as a PR comment, or storing it for retrieval elsewhere.
-    <!-- OPEN QUESTION (per your instructions): exact delivery/storage
-         mechanism for the report (PR comment vs. dashboard vs. artifact
-         store, etc.) isn't decided yet. -->
-    The Go orchestrator does **not** run `git apply`, commit, or push any AI-authored change to source code. The pipeline only re-runs when a human pushes their own fix.
+4.  **Report Surfacing:** The Go Orchestrator receives the summary report and makes it available for human review — e.g., posting it as a PR comment, or storing it for retrieval elsewhere. The Go orchestrator does **not** run `git apply`, commit, or push any AI-authored change to source code. The pipeline only re-runs when a human pushes their own fix.
 
 ---
 
@@ -111,4 +107,4 @@ The full operational capabilities of the agent can be mapped across three distin
 *   **Fast, Continuous Diagnosis:** Investigation and reproduction of test failures — via newly authored, targeted tests — happens within minutes of a failure, so a human developer starts debugging with a head start instead of from scratch.
 *   **Reduced Engineering Cognitive Load:** Developers are spared the initial legwork of reproducing and isolating trivial, repetitive failures, allowing focus on deciding and implementing the actual fix.
 *   **Institutional Memory:** By logging every error, vectorizing its context, and capturing successful human fixes alongside the AI's own diagnostic tests inside `pgvector`, the system gets progressively better at pinpointing failures with every single build cycle.
-*   **Simplified Coordination via Monorepo:** Because the orchestrator and AI service ship from one repository with one CI pipeline and one release cadence, changes to their shared contract (job payload, workflow ID, callback shape) are reviewed and merged atomically instead of coordinated across separate repos and release schedules.
+*   **Simplified Coordination via Monorepo:** Because the orchestrator and AI Engine ship from one repository with one CI pipeline and one release cadence, changes to their shared contract (job payload, workflow ID, callback shape) are reviewed and merged atomically instead of coordinated across separate repos and release schedules.

@@ -10,7 +10,6 @@ import (
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/pipelines"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/servertools"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/wstools"
 
 	"github.com/moby/moby/client"
 )
@@ -19,21 +18,13 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
-	prChannel := make(chan types.PullRequest)
-	// patchChannel := make(chan types.PullRequest)
+	taskChannel := make(chan types.Task)
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
 	err := config.Init()
 	if err != nil {
 		slog.Error("Failed to initialize global variables", "error", err)
-		return
-	}
-
-	// TODO: temp in case server crashes
-	err = wstools.ClearWorkspaces()
-	if err != nil {
-		slog.Error("Failed to clean broken workspaces", "error", err)
 		return
 	}
 
@@ -50,11 +41,10 @@ func main() {
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, prChannel)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
 
 	go func() {
-		// TODO: add patch channel
-		err = servertools.StartServer(mainCtx, prChannel, nil)
+		err = servertools.StartServer(mainCtx, taskChannel)
 		if err != nil {
 			slog.Error("Server failure", "error", err)
 			return
@@ -66,13 +56,15 @@ func main() {
 TODO List:
 	- testing
 		- add tests for the rest of the functions other than pr
-	- remove images and containers on success, keep of failure for inspection
-	- create an error channel?
-	- do not create a new request if the new commit came from this service
-	- pr.url is not necessary; add it to config
 	- handle receiving prs while workflow is running
 		- cancel running containers
 		- clear images (optional?)
 		- update workspace
 		- if patches for the wrong sha are received, discard them
+	- handle max test patching attempts
+	- figure out delivery mechanisms
+		- tests: http body
+		- logs: http body
+		- repo: path + id + etc and shared volume for persistance
+	- handle hanging workflows due to errors
 */

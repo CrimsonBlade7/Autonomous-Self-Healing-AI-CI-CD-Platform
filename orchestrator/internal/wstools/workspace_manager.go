@@ -13,7 +13,7 @@ import (
 type GitClient interface {
 	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
 	CommitPush(commitMsg, wsPath, branch, sha string) error
-	UpdateRepo(ctx context.Context, pr types.PullRequest) error
+	UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error
 }
 
 // Creates a unique temp directory in workspaceDir
@@ -66,14 +66,28 @@ func ClearWorkspaces() error {
 	}
 
 	// Recreate the empty directory with original permissions
-	if err := os.MkdirAll(config.WsDir, mode); err != nil {
+	if err := os.MkdirAll(config.GetPath(config.WsDir), mode); err != nil {
 		return fmt.Errorf("Failed to recreate dir: %w", err)
 	}
 
 	return nil
 }
 
-// TODO: placeholder
-func InsertTests() error {
-	return nil // stub
+// Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
+// If a test name does not exist, it will be logged, but no errors will be returned.
+func InsertTests(path string, data []byte, all bool, testNames []string) error {
+	file, err := os.Create(config.GetPath(path))
+	if err != nil {
+		return fmt.Errorf("Failed to create test file: %w", err)
+	}
+
+	if all {
+		_, err = file.Write(data)
+		if err != nil {
+			return fmt.Errorf("Failed to write tests: %w", err)
+		}
+	} else {
+		// TODO: how do i select specific tests and what if theyre multiple
+	}
+	return nil
 }
