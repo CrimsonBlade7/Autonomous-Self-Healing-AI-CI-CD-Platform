@@ -75,19 +75,16 @@ func ClearWorkspaces() error {
 
 // Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
 // If a test name does not exist, it will be logged, but no errors will be returned.
-func InsertTests(path string, data []byte, all bool, testNames []string) error {
+func InsertTests(path string, data []byte) error {
 	file, err := os.Create(config.GetPath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
 
-	if all {
-		_, err = file.Write(data)
-		if err != nil {
-			return fmt.Errorf("Failed to write tests: %w", err)
-		}
-	} else {
-		// TODO: how do i select specific tests and what if theyre multiple
+	_, err = file.Write(data)
+	if err != nil {
+		return fmt.Errorf("Failed to write tests: %w", err)
 	}
+	
 	return nil
 }

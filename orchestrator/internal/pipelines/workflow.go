@@ -116,7 +116,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					return fmt.Errorf("Test generation failed: too many attempts")
 				}
 				wf.attemptNum++
-				err := wstools.InsertTests(wf.path, job.Data, true, nil)
+				err := wstools.InsertTests(wf.path, job.Data)
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue
