@@ -44,7 +44,6 @@ func main() {
 	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
 
 	go func() {
-		// TODO: add patch channel
 		err = servertools.StartServer(mainCtx, taskChannel)
 		if err != nil {
 			slog.Error("Server failure", "error", err)

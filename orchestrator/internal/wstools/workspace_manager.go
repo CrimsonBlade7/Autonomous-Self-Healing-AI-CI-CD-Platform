@@ -66,7 +66,7 @@ func ClearWorkspaces() error {
 	}
 
 	// Recreate the empty directory with original permissions
-	if err := os.MkdirAll(config.WsDir, mode); err != nil {
+	if err := os.MkdirAll(config.GetPath(config.WsDir), mode); err != nil {
 		return fmt.Errorf("Failed to recreate dir: %w", err)
 	}
 
@@ -87,7 +87,7 @@ func InsertTests(path string, data []byte, all bool, testNames []string) error {
 			return fmt.Errorf("Failed to write tests: %w", err)
 		}
 	} else {
-		// TODO: how do i select specific tests and what if theyre multiple files???
+		// TODO: how do i select specific tests and what if theyre multiple
 	}
 	return nil
 }

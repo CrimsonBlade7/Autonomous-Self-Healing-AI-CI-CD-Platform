@@ -10,8 +10,8 @@ import (
 
 // TODO: figure out which should be in the .env
 var RootDir string // The root of this project.
-var RepoDir string // The directory that contains the repository root.
-var WsDir string   // The directory that contains all workspaces.
+var RepoDir string // The relative directory that contains the repository root.
+var WsDir string   // The relative directory that contains all workspaces.
 var RepositoryUrl string
 var GithubSecret string
 var GithubBotLogin string

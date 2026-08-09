@@ -40,18 +40,18 @@ func seconds(n uint) time.Duration {
 }
 
 func getSender(data []byte) (string, error) {
-	type senderOnly struct {
+	type temp struct {
 		Sender struct {
 			Login string `json:"login"`
 		} `json:"sender"`
 	}
 
-	var temp senderOnly
-	err := json.Unmarshal(data, &temp)
+	var t temp
+	err := json.Unmarshal(data, &t)
 	if err != nil {
 		return "", fmt.Errorf("Failed to unmarshal data: %w", err)
 	}
-	return temp.Sender.Login, nil
+	return t.Sender.Login, nil
 }
 
 // Github webhook handler

@@ -2,6 +2,8 @@ package dockertools
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -27,6 +29,8 @@ type ContainerManager interface {
 type TarBuilder interface {
 	TarWorkspace(pw *io.PipeWriter, path string) error
 }
+
+var ImageBuildErr error = errors.New("Image build failed")
 
 // Cleans up old images
 func ClearOldImages(ctx context.Context, im ImageManager) error {
@@ -72,11 +76,30 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	}
 	defer imageResult.Body.Close()
 
-	// TODO: imageResult.Body needs to be drained when complete
-	// imageResults is discarded for now
-	_, err = io.Copy(io.Discard, imageResult.Body)
+	type temp struct {
+		ErrorDetail struct {
+			Code    int    `json:"code,omitempty"`
+			Message string `json:"message,omitempty"`
+		} `json:"errorDetail,omitempty"`
+	}
+
+	var t temp
+	buf, err := io.ReadAll(imageResult.Body)
 	if err != nil {
-		return "", fmt.Errorf("Failed to print body: %w", err)
+		return "", fmt.Errorf("Failed to read image build result: %w", err)
+	}
+	err = json.Unmarshal(buf, &t)
+	if err != nil {
+		return "", fmt.Errorf("Failed to unmarshal image build result: %w", err)
+	}
+
+	if t.ErrorDetail.Code != 0 || t.ErrorDetail.Message != "" {
+		return "", fmt.Errorf(
+			"Failed to build image\n"+
+				"Code: %v\n"+
+				"Message: %s\n"+
+				"Error: %w",
+			t.ErrorDetail.Code, t.ErrorDetail.Message, ImageBuildErr)
 	}
 
 	return tag, nil
@@ -87,8 +110,8 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{},
-		Name:  tag,
-		Image: tag,
+		Name:       tag,
+		Image:      tag,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Failed to create container %s: %w", tag, err)

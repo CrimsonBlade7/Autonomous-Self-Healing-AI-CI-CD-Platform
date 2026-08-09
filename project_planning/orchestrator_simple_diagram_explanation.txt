@@ -15,7 +15,4 @@ Lifecycle
 14. The summary and the tests are then committed and pushed to remote. 
 
 Workflow Manager: Receives incoming requests, starts a new workflow if needed, and creates + assigns the job to the correct workflow. 
-If a push notification is received, any builds associated with the affected branches are canceled and the new head is fetched and checkedout. 
-If a pushes originating from this platform are received, they are ignored.
-
 Workflow: Receives and handles jobs. Exactly one workflow per PR.
