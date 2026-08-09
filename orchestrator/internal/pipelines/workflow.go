@@ -3,6 +3,7 @@ package pipelines
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
 
@@ -21,7 +22,7 @@ type Workflow struct {
 	path             string       // Path to the associated workspace
 	cleanWs          func() error // Removes the workspace at path
 	attemptNum       uint
-	currentTestsPath string // TODO: Save the tests to a seperate folder or have the ai engine send the final version at the end
+	currentTestsPath string
 }
 
 const (
@@ -111,12 +112,11 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 				}
 
 			case RUN_TESTS:
-				// TODO: insert tests from rag pipeline
 				if wf.attemptNum > config.MaxTestPatchingAttempts {
 					return fmt.Errorf("Test generation failed: too many attempts")
 				}
 				wf.attemptNum++
-				err := wstools.InsertTests(wf.path, job.Data, true, nil)
+				err := wstools.InsertTests(wf.path, job.Data)
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue
@@ -128,14 +128,30 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					slog.Error("Failed to build image", "error", err)
 					continue
 				}
-				logs, err := dockertools.RunContainer(ctx, cli, tag)
+				logOut, logErr, err := dockertools.RunContainer(ctx, cli, tag)
 				if err != nil {
 					slog.Error("Failed to build container", "error", err)
 					continue
 				}
-				defer logs.Close()
+				defer logOut.Close()
+				defer logErr.Close()
 
-				// TODO: return logs
+				logOutBytes, err := io.ReadAll(logOut)
+				if err != nil {
+					slog.Error("Failed to read output logs", "error", err)
+				}
+				logOutString := string(logOutBytes)
+				logErrBytes, err := io.ReadAll(logErr)
+				if err != nil {
+					slog.Error("Failed to read error logs", "error", err)
+				}
+				logErrString := string(logErrBytes)
+
+				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
+					Wfid: wf.wfid,
+					Stdout: logOutString,
+					Stderr: logErrString,
+				})
 
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))

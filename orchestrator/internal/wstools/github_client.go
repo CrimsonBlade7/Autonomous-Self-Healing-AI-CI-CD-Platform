@@ -59,7 +59,6 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) error {
 		return fmt.Errorf("Failed to get remote: %w", err)
 	}
 
-	// TODO: verify if i did this correctly
 	err = repo.Push(&git.PushOptions{
 		RemoteName: "origin",
 		RemoteURL:  remote.Config().URLs[0],

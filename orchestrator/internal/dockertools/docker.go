@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
@@ -105,8 +106,8 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	return tag, nil
 }
 
-// Builds and runs a container labeled with tag. The caller is responsible for closing io.ReadCloser.
-func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, error) {
+// Builds and runs a container labeled with tag. The caller is responsible for closing the logs.
+func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{},
@@ -114,7 +115,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 		Image:      tag,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
+		return nil, nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
 
 	defer func() {
@@ -132,12 +133,12 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 		ShowStderr: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to create a container logger: %w", err)
+		return nil, nil,  fmt.Errorf("Failed to create a container logger: %w", err)
 	}
 
 	_, err = cm.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to start container: %w", err)
+		return nil, nil,  fmt.Errorf("Failed to start container: %w", err)
 	}
 
 	response := cm.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
@@ -150,8 +151,14 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 
 	cm.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("Failed to remove container: %w", err)
+		return nil, nil, fmt.Errorf("Failed to remove container: %w", err)
 	}
 
-	return logs, nil
+	outReader, outWriter := io.Pipe()
+	errReader, errWriter := io.Pipe()
+	defer outWriter.Close()
+	defer outWriter.Close()
+	stdcopy.StdCopy(outWriter, errWriter, logs)
+
+	return outReader, errReader, nil
 }

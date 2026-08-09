@@ -143,14 +143,16 @@ func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
 }
 
 // Sends a http request to the AI Engine.
-// jobType can be one of:
-// - open: start a workflow when a pr opens
-// - close: close and merge implied; end associated workflow and update rag index
-// - update_pr: update pr information
+// jobType can be one of: "open", "close", "logs", "update_pr".
+// open: Start a workflow when a pr opens.
+// close: Close and merge implied; end associated workflow and update rag index.
+// logs: Return the logs of the last test run.
+// update_pr: Update pr information.
 func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) error {
 	validJobTypes := []string{
 		"open",
 		"close",
+		"logs",
 		"update_pr",
 	}
 
@@ -220,7 +222,7 @@ func StartServer(ctx context.Context, taskChannel chan types.Task) error {
 	<-lifetime.Done()
 
 	// create a context for duration of the server shutdown
-	countdown := time.Duration(config.ServerShutdownTimeLimit) * time.Second
+	countdown := time.Duration(config.ServerShutdownTimeout) * time.Second
 	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, countdown)
 	defer cancelShutdown()
 
