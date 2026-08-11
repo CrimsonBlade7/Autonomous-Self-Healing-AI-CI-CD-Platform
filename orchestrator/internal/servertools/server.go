@@ -35,7 +35,7 @@ func verifyMessage(message []byte, secret, signature string) bool {
 }
 
 // Returns time.Duration of n seconds
-func seconds(n uint) time.Duration {
+func seconds(n int) time.Duration {
 	return time.Duration(n) * time.Second
 }
 

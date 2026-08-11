@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
@@ -25,6 +26,16 @@ type ContainerManager interface {
 	ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error)
 	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
 	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
+	ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) client.ContainerInspectResult
+}
+
+type ContainerInspection struct {
+	ExitCode  int
+	StartTime time.Time
+	EndTime   time.Time
+	Errors    string
+	OOMKilled bool
+	State     string
 }
 
 type TarBuilder interface {
@@ -107,7 +118,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 }
 
 // Builds and runs a container labeled with tag. The caller is responsible for closing the logs.
-func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.ReadCloser, io.ReadCloser, error) {
+func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string, io.ReadCloser, io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{},
@@ -115,7 +126,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 		Image:      tag,
 	})
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
+		return "", nil, nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
 
 	defer func() {
@@ -133,12 +144,12 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 		ShowStderr: true,
 	})
 	if err != nil {
-		return nil, nil,  fmt.Errorf("Failed to create a container logger: %w", err)
+		return "", nil, nil, fmt.Errorf("Failed to create a container logger: %w", err)
 	}
 
 	_, err = cm.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
 	if err != nil {
-		return nil, nil,  fmt.Errorf("Failed to start container: %w", err)
+		return "", nil, nil, fmt.Errorf("Failed to start container: %w", err)
 	}
 
 	response := cm.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
@@ -149,16 +160,27 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (io.Read
 		slog.Error("Container error", "error", err)
 	}
 
-	cm.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{})
-	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to remove container: %w", err)
-	}
-
 	outReader, outWriter := io.Pipe()
 	errReader, errWriter := io.Pipe()
 	defer outWriter.Close()
 	defer outWriter.Close()
 	stdcopy.StdCopy(outWriter, errWriter, logs)
 
-	return outReader, errReader, nil
+	return cont.ID, outReader, errReader, nil
+}
+
+func InspectContainer(ctx context.Context, cm ContainerManager, id string) ContainerInspection {
+	inspectResult := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	ci := ContainerInspection{
+		ExitCode: inspectResult.Container.State.ExitCode,
+	}
+}
+
+func RemoveContainer(ctx context.Context, cm ContainerManager, id string) error {
+	cont := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	_, err := cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{})
+	if err != nil {
+		return fmt.Errorf("Failed to remove container: %w", err)
+	}
+	return nil
 }

@@ -16,7 +16,7 @@ type Task interface {
 // Response should come with a HMAC-Signature-256 header.
 // Contains the tests and the summary.
 type AIEngineResponse struct {
-	Wfid uint
+	Wfid int
 	Done bool
 	// Tests are included if the workflow needs to continue.
 	// Summary is included only if the workflow is complete.
@@ -27,7 +27,7 @@ type AIEngineResponse struct {
 func (aier AIEngineResponse) TaskType()
 
 type PullRequest struct {
-	Number  uint   `json:"number"`
+	Number  int    `json:"number"`
 	Action  string `json:"action"`
 	Branch  string `json:"branch"`
 	Title   string `json:"title"`
@@ -41,7 +41,7 @@ type PullRequest struct {
 func (pr *PullRequest) UnmarshalpullRequest(data []byte) error {
 	var temp struct {
 		Action      string `json:"action"`
-		Number      uint   `json:"number"`
+		Number      int    `json:"number"`
 		PullRequest struct {
 			Title string `json:"title"`
 			Body  string `json:"body"`

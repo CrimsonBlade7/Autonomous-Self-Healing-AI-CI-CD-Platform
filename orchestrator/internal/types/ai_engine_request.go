@@ -4,8 +4,9 @@ package types
 // Request should come with a HMAC-Signature-256.
 // Contains the pull request and the logs.
 type AIEngineRequest struct {
-	Wfid        uint // Mandatory
+	Wfid        int // Mandatory
 	PullRequest PullRequest
 	Stdout      string
 	Stderr      string
+	ExitCode    int
 }

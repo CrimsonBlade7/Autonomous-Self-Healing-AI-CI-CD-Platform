@@ -16,12 +16,12 @@ import (
 )
 
 type Workflow struct {
-	wfid             uint // The pr number
+	wfid             int // The pr number
 	pullRequest      types.PullRequest
 	Jobs             chan Job
 	path             string       // Path to the associated workspace
 	cleanWs          func() error // Removes the workspace at path
-	attemptNum       uint
+	attemptNum       int
 	currentTestsPath string
 }
 
@@ -40,7 +40,7 @@ type Job struct {
 	// - UPDATE_PR
 	// - RUN_TESTS
 	// - COMMIT_PUSH
-	JobType uint
+	JobType int
 	Task    types.Task // optional
 	Data    []byte     // optional
 }
@@ -151,6 +151,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					Wfid: wf.wfid,
 					Stdout: logOutString,
 					Stderr: logErrString,
+					ExitCode: ,
 				})
 
 			default:
@@ -160,7 +161,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 	}
 }
 
-func (wf *Workflow) GetWfid() uint {
+func (wf *Workflow) GetWfid() int {
 	return wf.wfid
 }
 func (wf *Workflow) GetPullRequest() types.PullRequest {
