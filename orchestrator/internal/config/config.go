@@ -18,11 +18,21 @@ var GithubSecret string
 var GithubBotLogin string
 var AIEngineSecret string
 var AIEnginePort string
-var AIEngineRequestTimeout int = 5
-var ServerShutdownTimeout int = 30
-var ReadHeaderTimeout int = 2
-var WriteTimeout int = 5
-var MaxTestPatchingAttempts int = 10
+
+const (
+	BYTE int = 1
+	KB   int = 1e3 * BYTE
+	MB   int = 1e3 * KB
+	GB   int = 1e3 * MB
+
+	AI_ENGINE_REQUEST_TIMEOUT  int = 5
+	SERVER_SHUTDOWN_TIMEOUT    int = 30
+	READ_HEADER_TIMEOUT        int = 2
+	WRITE_TIMEOUT              int = 5
+	MAX_TEST_PATCHING_ATTEMPTS int = 10
+	CONTAINER_TIMEOUT          int = 10     // in minutes
+	CONTAINER_MEMORY_CAP       int = 2 * MB // in MB
+)
 
 /*
 	url := "https://github.com/CrimsonBlade7/CI-CD-Test.git"

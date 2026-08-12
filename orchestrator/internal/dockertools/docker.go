@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -132,9 +133,13 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id string, outReader io.ReadCloser, errReader io.ReadCloser, err error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
-		HostConfig: &container.HostConfig{},
-		Name:       tag,
-		Image:      tag,
+		HostConfig: &container.HostConfig{
+			Resources: container.Resources{
+				Memory: int64(config.CONTAINER_MEMORY_CAP * config.MB),
+			},
+		},
+		Name:  tag,
+		Image: tag,
 	})
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to create container %s: %w", tag, err)

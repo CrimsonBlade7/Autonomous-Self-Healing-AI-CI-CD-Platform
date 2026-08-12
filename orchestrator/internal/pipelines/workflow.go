@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/dockertools"
@@ -112,7 +113,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 				}
 
 			case RUN_TESTS:
-				if wf.attemptNum > config.MaxTestPatchingAttempts {
+				if wf.attemptNum > config.MAX_TEST_PATCHING_ATTEMPTS {
 					return fmt.Errorf("Test generation failed: too many attempts")
 				}
 				wf.attemptNum++
@@ -131,7 +132,9 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 
 				// Process the container
 				contInspect, logOut, logErr, err := func() (dockertools.ContainerInspection, string, string, error) {
-					contID, logOut, logErr, err := dockertools.RunContainer(ctx, cli, tag)
+					subContext, cancel := context.WithTimeout(ctx, time.Duration(config.CONTAINER_TIMEOUT)*time.Minute)
+					defer cancel()
+					contID, logOut, logErr, err := dockertools.RunContainer(subContext, cli, tag)
 					if err != nil {
 						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to build container: %w", err)
 					}
@@ -176,15 +179,15 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 				}
 
 				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
-					Wfid:     wf.wfid,
-					Stdout:   logOut,
-					Stderr:   logErr,
+					Wfid:      wf.wfid,
+					Stdout:    logOut,
+					Stderr:    logErr,
 					StartTime: contInspect.StartTime,
-					EndTime: contInspect.EndTime,
-					Errors: contInspect.Errors,
-					Status: contInspect.Status,
+					EndTime:   contInspect.EndTime,
+					Errors:    contInspect.Errors,
+					Status:    contInspect.Status,
 					OOMKilled: contInspect.OOMKilled,
-					ExitCode: contInspect.ExitCode,
+					ExitCode:  contInspect.ExitCode,
 				})
 
 			default:

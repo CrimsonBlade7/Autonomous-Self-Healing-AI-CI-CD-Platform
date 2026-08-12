@@ -71,11 +71,9 @@ TODO List:
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?
 	- .env injection *
-	- capture container exit code *
 	- container timeout *
 	- container mem cap *
 	- log storage
-	- properly handle closing errors
 
 Wishlist
 	- multi-service testing
