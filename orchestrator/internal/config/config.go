@@ -1,16 +1,17 @@
 package config
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/joho/godotenv"
 )
 
 var Port string = "8080"
 var RootDir string // The root of this project.
-var RepoDir string // The relative directory that contains the repository root.
 var WsDir string   // The relative directory that contains all workspaces.
 var GithubToken string
 var RepositoryUrl string
@@ -18,20 +19,51 @@ var GithubSecret string
 var GithubBotLogin string
 var AIEngineSecret string
 var AIEnginePort string
-var AIEngineRequestTimeout uint = 5
-var ServerShutdownTimeout uint = 30
-var ReadHeaderTimeout uint = 2
-var WriteTimeout uint = 5
-var MaxTestPatchingAttempts uint = 10
+var TestingEnvSlice []string
+
+const (
+	BYTE int = 1
+	KB   int = 1e3 * BYTE
+	MB   int = 1e3 * KB
+	GB   int = 1e3 * MB
+
+	AI_ENGINE_REQUEST_TIMEOUT  int = 5
+	SERVER_SHUTDOWN_TIMEOUT    int = 30
+	READ_HEADER_TIMEOUT        int = 2
+	WRITE_TIMEOUT              int = 5
+	MAX_TEST_PATCHING_ATTEMPTS int = 10
+	CONTAINER_TIMEOUT          int = 10     // in minutes
+	CONTAINER_MEMORY_CAP       int = 2 * GB // in bytes
+)
 
 /*
 	url := "https://github.com/CrimsonBlade7/CI-CD-Test.git"
 	sha := "f27e0af69b5eaddb08a22d7542ffb584f19e0f71"
 */
 
+func loadTestingEnvVars() (err error) {
+	testEnvFile, err := os.Open(GetPath("/orchestrator/internal/config/test-env-vars.txt"))
+	if err != nil {
+		return fmt.Errorf("Failed to open test env file: %w", err)
+	}
+	testEnvScanner := bufio.NewScanner(testEnvFile)
+	for testEnvScanner.Scan() {
+		line := testEnvScanner.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		TestingEnvSlice = append(TestingEnvSlice, line)
+	}
+	err = testEnvScanner.Err()
+	if err != nil {
+		return fmt.Errorf("Scanner failed: %w", err)
+	}
+	return nil
+}
+
 // Loads the env variables
-func loadEnv() error {
-	err := godotenv.Load()
+func loadEnv() (err error) {
+	err = godotenv.Load()
 	if err != nil {
 		return fmt.Errorf("Failed to load .env file: %w", err)
 	}
@@ -68,11 +100,7 @@ func loadEnv() error {
 }
 
 // Initializes global variables. Must be called first in main.
-func Init() error {
-	err := loadEnv()
-	if err != nil {
-		return fmt.Errorf("Failed to load env variables: %w", err)
-	}
+func Init() (err error) {
 	exePath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("Failed to get executable path: %w", err)
@@ -88,8 +116,18 @@ func Init() error {
 	// Warning: only works if the path to main is orchestrator/cmd/main.go
 	// RootDir = ./Autonomous-AI-CI-CD-Platform
 	RootDir = filepath.Dir(filepath.Dir(filepath.Dir(exePath)))
-	WsDir = GetPath("/shared/workspaces")
-	RepoDir = GetPath("/shared")
+	WsDir = GetPath("/orchestrator/workspaces")
+
+	err = loadEnv()
+	if err != nil {
+		return fmt.Errorf("Failed to load env variables: %w", err)
+	}
+
+	err = loadTestingEnvVars()
+	if err != nil {
+		return fmt.Errorf("Failed to load test env variables: %w", err)
+	}
+
 	return nil
 }
 

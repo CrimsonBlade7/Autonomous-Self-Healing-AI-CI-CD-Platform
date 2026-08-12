@@ -33,7 +33,12 @@ func main() {
 		slog.Error("Failed to start moby client", "error", err)
 		return
 	}
-	defer cli.Close()
+	defer func() {
+		err = cli.Close()
+		if err != nil {
+			slog.Error("Failed to close the docker client", "error", err)
+		}
+	}()
 
 	err = dockertools.ClearOldImages(mainCtx, cli)
 	if err != nil {
@@ -55,16 +60,23 @@ func main() {
 /*
 TODO List:
 	- testing
-		- add tests for the rest of the functions other than pr
+		- add tests
 	- handle receiving prs while workflow is running
 		- cancel running containers
 		- clear images (optional?)
-		- update workspace
 		- if patches for the wrong sha are received, discard them
-	- handle max test patching attempts
-	- figure out delivery mechanisms
-		- tests: http body
-		- logs: http body
-		- repo: path + id + etc and shared volume for persistance
 	- handle hanging workflows due to errors
+	- dockerize this project
+		- add docker volumes for workspaces
+		- also maybe for saving workflows?
+	- log storage
+	- handle dead containers
+
+Wishlist
+	- multi-service testing
+	- seperate test files/test directory structure
+	- running tests multiple times?
+	- structured test result contracts
+	- orchestrator can check the language from a user provided spec?
+
 */

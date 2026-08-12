@@ -15,7 +15,7 @@ import (
 type GithubClient struct{}
 
 // Initializes the repository at path. Returns CancelLoopErr if the committer was this service to prevent infinite loops.
-func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) error {
+func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) (err error) {
 	repo, err := git.PlainInit(path, false)
 	if err != nil {
 		return fmt.Errorf("Failed to initialize repo %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
@@ -37,7 +37,7 @@ func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullR
 	return nil
 }
 
-func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) error {
+func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (err error) {
 
 	repo, err := git.PlainOpen(wsPath)
 	if err != nil {
@@ -73,7 +73,7 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) error {
 	return nil
 }
 
-func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error {
+func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) (err error) {
 	// fetch specific sha
 	repo, err := git.PlainOpen(wsPath)
 	if err != nil {
@@ -103,8 +103,8 @@ func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr ty
 	return nil
 }
 
-func checkoutSHA(repo *git.Repository, sha string) (*git.Worktree, error) {
-	wt, err := repo.Worktree()
+func checkoutSHA(repo *git.Repository, sha string) (wt *git.Worktree, err error) {
+	wt, err = repo.Worktree()
 	if err != nil {
 		return nil, fmt.Errorf("Failed to get worktree: %w", err)
 	}

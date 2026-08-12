@@ -17,32 +17,32 @@ type WorkflowObject struct {
 
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
-	idMap     map[uint]WorkflowObject
-	mutex     sync.RWMutex
+	idMap map[int]WorkflowObject
+	mutex sync.RWMutex
 }
 
 // Creates a new workflow manager.
 func NewWorkflowManager() *WorkflowManager {
 	return &WorkflowManager{
-		idMap:     make(map[uint]WorkflowObject),
-		mutex:     sync.RWMutex{},
+		idMap: make(map[int]WorkflowObject),
+		mutex: sync.RWMutex{},
 	}
 }
 
-func (wfm *WorkflowManager) Get(id uint) (WorkflowObject, bool) {
+func (wfm *WorkflowManager) Get(id int) (WorkflowObject, bool) {
 	wfm.mutex.RLock()
 	defer wfm.mutex.RUnlock()
 	val, exists := wfm.idMap[id]
 	return val, exists
 }
 
-func (wfm *WorkflowManager) Set(id uint, wo WorkflowObject) {
+func (wfm *WorkflowManager) Set(id int, wo WorkflowObject) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
 	wfm.idMap[id] = wo
 }
 
-func (wfm *WorkflowManager) Remove(id uint) {
+func (wfm *WorkflowManager) Remove(id int) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
 	delete(wfm.idMap, id)
@@ -84,7 +84,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 	}
 }
 
-func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) error {
+func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) (err error) {
 	num := pr.Number
 	wfo, exists := wfm.Get(num)
 	wf := wfo.workflow

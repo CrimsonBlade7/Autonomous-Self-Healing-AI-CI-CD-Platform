@@ -35,11 +35,11 @@ func verifyMessage(message []byte, secret, signature string) bool {
 }
 
 // Returns time.Duration of n seconds
-func seconds(n uint) time.Duration {
+func seconds(n int) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-func getSender(data []byte) (string, error) {
+func getSender(data []byte) (login string, err error) {
 	type temp struct {
 		Sender struct {
 			Login string `json:"login"`
@@ -47,17 +47,23 @@ func getSender(data []byte) (string, error) {
 	}
 
 	var t temp
-	err := json.Unmarshal(data, &t)
+	err = json.Unmarshal(data, &t)
 	if err != nil {
 		return "", fmt.Errorf("Failed to unmarshal data: %w", err)
 	}
-	return t.Sender.Login, nil
+	login = t.Sender.Login
+	return login, nil
 }
 
 // Github webhook handler
 func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() {
+			closeErr := r.Body.Close()
+			if closeErr != nil {
+				slog.Error("Failed to close request body", "error", closeErr)
+			}
+		}()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -110,7 +116,12 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 // Handles responses from the AI Engine and sends response to respChannel.
 func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() {
+			closeErr := r.Body.Close()
+			if closeErr != nil {
+				slog.Error("Failed to close request body", "error", closeErr)
+			}
+		}()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -148,7 +159,7 @@ func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
 // close: Close and merge implied; end associated workflow and update rag index.
 // logs: Return the logs of the last test run.
 // update_pr: Update pr information.
-func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) error {
+func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) (err error) {
 	validJobTypes := []string{
 		"open",
 		"close",
@@ -161,7 +172,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 	}
 
 	cli := http.Client{
-		Timeout: seconds(config.AIEngineRequestTimeout),
+		Timeout: seconds(config.AI_ENGINE_REQUEST_TIMEOUT),
 	}
 
 	msgBytes, err := json.Marshal(req)
@@ -181,7 +192,12 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 	if err != nil {
 		return fmt.Errorf("Failed to send http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		closeErr := resp.Body.Close()
+		if closeErr != nil {
+			err = closeErr
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Bad response, status: %v", resp.StatusCode)
 	}
@@ -189,7 +205,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 }
 
 // Starts the http server.
-func StartServer(ctx context.Context, taskChannel chan types.Task) error {
+func StartServer(ctx context.Context, taskChannel chan types.Task) (err error) {
 
 	// initialize server
 	mux := http.NewServeMux()
@@ -199,9 +215,9 @@ func StartServer(ctx context.Context, taskChannel chan types.Task) error {
 	port := fmt.Sprintf(":%s", config.Port)
 	server := &http.Server{
 		Addr:              port,
-		Handler:           mux,                               // Inject your isolated router
-		ReadHeaderTimeout: seconds(config.ReadHeaderTimeout), // Max time to read just the headers
-		WriteTimeout:      seconds(config.WriteTimeout),      // Max time to write the response
+		Handler:           mux,                                 // Inject your isolated router
+		ReadHeaderTimeout: seconds(config.READ_HEADER_TIMEOUT), // Max time to read just the headers
+		WriteTimeout:      seconds(config.WRITE_TIMEOUT),       // Max time to write the response
 	}
 
 	// create a context for server lifetime
@@ -222,12 +238,12 @@ func StartServer(ctx context.Context, taskChannel chan types.Task) error {
 	<-lifetime.Done()
 
 	// create a context for duration of the server shutdown
-	countdown := time.Duration(config.ServerShutdownTimeout) * time.Second
+	countdown := time.Duration(config.SERVER_SHUTDOWN_TIMEOUT) * time.Second
 	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, countdown)
 	defer cancelShutdown()
 
 	// shutting down the server
-	err := server.Shutdown(shutdownCtx)
+	err = server.Shutdown(shutdownCtx)
 	if err != nil {
 		slog.Error("Server forced to shutdown", "error", err)
 		return err

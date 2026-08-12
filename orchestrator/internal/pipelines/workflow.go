@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/dockertools"
@@ -16,12 +17,12 @@ import (
 )
 
 type Workflow struct {
-	wfid             uint // The pr number
+	wfid             int // The pr number
 	pullRequest      types.PullRequest
 	Jobs             chan Job
 	path             string       // Path to the associated workspace
 	cleanWs          func() error // Removes the workspace at path
-	attemptNum       uint
+	attemptNum       int
 	currentTestsPath string
 }
 
@@ -40,26 +41,26 @@ type Job struct {
 	// - UPDATE_PR
 	// - RUN_TESTS
 	// - COMMIT_PUSH
-	JobType uint
+	JobType int
 	Task    types.Task // optional
 	Data    []byte     // optional
 }
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
-func newWorkflow(pr types.PullRequest) (*Workflow, error) {
-	wf := Workflow{
+func newWorkflow(pr types.PullRequest) (wf *Workflow, err error) {
+	wf = &Workflow{
 		wfid:        pr.Number,
 		pullRequest: pr,
 		Jobs:        make(chan Job),
 		attemptNum:  0,
 	}
 
-	return &wf, nil
+	return wf, nil
 }
 
 // Starts the job pipeline. Handles incoming jobs.
-func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
+func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -112,7 +113,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 				}
 
 			case RUN_TESTS:
-				if wf.attemptNum > config.MaxTestPatchingAttempts {
+				if wf.attemptNum > config.MAX_TEST_PATCHING_ATTEMPTS {
 					return fmt.Errorf("Test generation failed: too many attempts")
 				}
 				wf.attemptNum++
@@ -128,29 +129,65 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					slog.Error("Failed to build image", "error", err)
 					continue
 				}
-				logOut, logErr, err := dockertools.RunContainer(ctx, cli, tag)
-				if err != nil {
-					slog.Error("Failed to build container", "error", err)
-					continue
-				}
-				defer logOut.Close()
-				defer logErr.Close()
 
-				logOutBytes, err := io.ReadAll(logOut)
+				// Process the container
+				contInspect, logOut, logErr, err := func() (dockertools.ContainerInspection, string, string, error) {
+					subContext, cancel := context.WithTimeout(ctx, time.Duration(config.CONTAINER_TIMEOUT)*time.Minute)
+					defer cancel()
+					contID, logOut, logErr, err := dockertools.RunContainer(subContext, cli, tag)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to build container: %w", err)
+					}
+
+					// Close the logs and remove container
+					// err is updated before this IIFE returns
+					defer func() {
+						err = logOut.Close()
+						if err != nil {
+							err = fmt.Errorf("Failed to close out logs: %w", err)
+						}
+						err = logErr.Close()
+						if err != nil {
+							err = fmt.Errorf("Failed to close error logs: %w", err)
+						}
+						err = dockertools.RemoveContainer(ctx, cli, contID)
+						if err != nil {
+							err = fmt.Errorf("Failed to remove container: %w", err)
+						}
+					}()
+
+					logOutBytes, err := io.ReadAll(logOut)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read output logs: %w", err)
+					}
+					logOutString := string(logOutBytes)
+					logErrBytes, err := io.ReadAll(logErr)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read error logs: %w", err)
+					}
+					logErrString := string(logErrBytes)
+
+					inspect, err := dockertools.InspectContainer(ctx, cli, contID)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to inspect container: %w", err)
+					}
+
+					return inspect, logOutString, logErrString, err
+				}()
 				if err != nil {
-					slog.Error("Failed to read output logs", "error", err)
+					slog.Error("Container failed", "error", err)
 				}
-				logOutString := string(logOutBytes)
-				logErrBytes, err := io.ReadAll(logErr)
-				if err != nil {
-					slog.Error("Failed to read error logs", "error", err)
-				}
-				logErrString := string(logErrBytes)
 
 				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
-					Wfid: wf.wfid,
-					Stdout: logOutString,
-					Stderr: logErrString,
+					Wfid:      wf.wfid,
+					Stdout:    logOut,
+					Stderr:    logErr,
+					StartTime: contInspect.StartTime,
+					EndTime:   contInspect.EndTime,
+					Errors:    contInspect.Errors,
+					Status:    contInspect.Status,
+					OOMKilled: contInspect.OOMKilled,
+					ExitCode:  contInspect.ExitCode,
 				})
 
 			default:
@@ -160,7 +197,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 	}
 }
 
-func (wf *Workflow) GetWfid() uint {
+func (wf *Workflow) GetWfid() int {
 	return wf.wfid
 }
 func (wf *Workflow) GetPullRequest() types.PullRequest {
