@@ -69,7 +69,6 @@ TODO List:
 	- dockerize this project
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?
-	- .env injection *
 	- log storage
 	- handle dead containers
 
