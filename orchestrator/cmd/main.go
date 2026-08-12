@@ -71,6 +71,7 @@ TODO List:
 		- also maybe for saving workflows?
 	- .env injection *
 	- log storage
+	- handle dead containers
 
 Wishlist
 	- multi-service testing
