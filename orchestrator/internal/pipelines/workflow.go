@@ -47,19 +47,19 @@ type Job struct {
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
-func newWorkflow(pr types.PullRequest) (*Workflow, error) {
-	wf := Workflow{
+func newWorkflow(pr types.PullRequest) (wf *Workflow, err error) {
+	wf = &Workflow{
 		wfid:        pr.Number,
 		pullRequest: pr,
 		Jobs:        make(chan Job),
 		attemptNum:  0,
 	}
 
-	return &wf, nil
+	return wf, nil
 }
 
 // Starts the job pipeline. Handles incoming jobs.
-func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
+func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err error) {
 	for {
 		select {
 		case <-ctx.Done():

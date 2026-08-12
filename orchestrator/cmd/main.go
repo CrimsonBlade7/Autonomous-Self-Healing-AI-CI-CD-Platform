@@ -33,7 +33,12 @@ func main() {
 		slog.Error("Failed to start moby client", "error", err)
 		return
 	}
-	defer cli.Close()
+	defer func() {
+		err = cli.Close()
+		if err != nil {
+			slog.Error("Failed to close the docker client", "error", err)
+		}
+	}()
 
 	err = dockertools.ClearOldImages(mainCtx, cli)
 	if err != nil {

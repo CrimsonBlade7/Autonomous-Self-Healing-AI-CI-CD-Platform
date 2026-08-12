@@ -84,7 +84,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 	}
 }
 
-func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) error {
+func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) (err error) {
 	num := pr.Number
 	wfo, exists := wfm.Get(num)
 	wf := wfo.workflow

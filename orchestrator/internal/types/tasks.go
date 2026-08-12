@@ -38,7 +38,7 @@ type PullRequest struct {
 }
 
 // Populates fields from a byte slice
-func (pr *PullRequest) UnmarshalpullRequest(data []byte) error {
+func (pr *PullRequest) UnmarshalpullRequest(data []byte) (err error) {
 	var temp struct {
 		Action      string `json:"action"`
 		Number      int    `json:"number"`
@@ -56,7 +56,7 @@ func (pr *PullRequest) UnmarshalpullRequest(data []byte) error {
 		} `json:"pull_request"`
 	}
 
-	err := json.Unmarshal(data, &temp)
+	err = json.Unmarshal(data, &temp)
 	if err != nil {
 		return fmt.Errorf("Failed to unmarshal json data: %w", err)
 	}

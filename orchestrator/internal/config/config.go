@@ -30,8 +30,8 @@ var MaxTestPatchingAttempts int = 10
 */
 
 // Loads the env variables
-func loadEnv() error {
-	err := godotenv.Load()
+func loadEnv() (err error) {
+	err = godotenv.Load()
 	if err != nil {
 		return fmt.Errorf("Failed to load .env file: %w", err)
 	}
@@ -68,8 +68,8 @@ func loadEnv() error {
 }
 
 // Initializes global variables. Must be called first in main.
-func Init() error {
-	err := loadEnv()
+func Init() (err error) {
+	err = loadEnv()
 	if err != nil {
 		return fmt.Errorf("Failed to load env variables: %w", err)
 	}

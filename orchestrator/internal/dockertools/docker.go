@@ -45,7 +45,7 @@ type TarBuilder interface {
 var ImageBuildErr error = errors.New("Image build failed")
 
 // Cleans up old images
-func ClearOldImages(ctx context.Context, im ImageManager) error {
+func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 	images, err := im.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
@@ -60,10 +60,15 @@ func ClearOldImages(ctx context.Context, im ImageManager) error {
 }
 
 // Builds an image from src with sha as the tag.
-func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string, tb TarBuilder) (string, error) {
+func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string, tb TarBuilder) (tag string, err error) {
 
 	pr, pw := io.Pipe()
-	defer pr.Close()
+	defer func() {
+		closeErr := pr.Close()
+		if closeErr != nil {
+			err = closeErr
+		}
+	}()
 	go func() {
 		err := tb.TarWorkspace(pw, srcPath)
 		if err != nil {
@@ -77,7 +82,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 		}
 	}()
 
-	tag := fmt.Sprintf("%s:%s", wsName, sha)
+	tag = fmt.Sprintf("%s:%s", wsName, sha)
 
 	imageResult, err := im.ImageBuild(ctx, pr, client.ImageBuildOptions{
 		Tags:       []string{tag},
@@ -86,7 +91,12 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	if err != nil {
 		return "", fmt.Errorf("Failed to build image: %w", err)
 	}
-	defer imageResult.Body.Close()
+	defer func() {
+		closeErr := imageResult.Body.Close()
+		if closeErr != nil {
+			err = closeErr
+		}
+	}()
 
 	type temp struct {
 		ErrorDetail struct {
@@ -114,12 +124,12 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 			t.ErrorDetail.Code, t.ErrorDetail.Message, ImageBuildErr)
 	}
 
-	return tag, nil
+	return tag, err
 }
 
 // Builds and runs a container labeled with tag. Returns the id, stdout, stderr, and an error.
 // The caller is responsible for closing the logs.
-func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string, io.ReadCloser, io.ReadCloser, error) {
+func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id string, outReader io.ReadCloser, errReader io.ReadCloser, err error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
 		HostConfig: &container.HostConfig{},
@@ -129,7 +139,6 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string,
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
-
 	defer func() {
 		_, err = cm.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{
 			RemoveVolumes: true,
@@ -140,7 +149,9 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string,
 		}
 	}()
 
-	logs, err := cm.ContainerLogs(ctx, cont.ID, client.ContainerLogsOptions{
+	id = cont.ID
+
+	logs, err := cm.ContainerLogs(ctx, id, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -148,12 +159,12 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string,
 		return "", nil, nil, fmt.Errorf("Failed to create a container logger: %w", err)
 	}
 
-	_, err = cm.ContainerStart(ctx, cont.ID, client.ContainerStartOptions{})
+	_, err = cm.ContainerStart(ctx, id, client.ContainerStartOptions{})
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to start container: %w", err)
 	}
 
-	response := cm.ContainerWait(ctx, cont.ID, client.ContainerWaitOptions{})
+	response := cm.ContainerWait(ctx, id, client.ContainerWaitOptions{})
 	select {
 	case <-response.Result:
 		slog.Info("Container completed")
@@ -163,15 +174,21 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string,
 
 	outReader, outWriter := io.Pipe()
 	errReader, errWriter := io.Pipe()
-	defer outWriter.Close()
-	defer outWriter.Close()
+	defer func() {
+		outWriterErr := outWriter.Close()
+		errWriterErr := errWriter.Close()
+		closeErr := errors.Join(outWriterErr, errWriterErr)
+		if closeErr != nil {
+			err = closeErr
+		}
+	}()
 	stdcopy.StdCopy(outWriter, errWriter, logs)
 
-	return cont.ID, outReader, errReader, nil
+	return id, outReader, errReader, err
 }
 
 // Returns current state of a completed container as a ContainerInspection struct.
-func InspectContainer(ctx context.Context, cm ContainerManager, id string) (ContainerInspection, error) {
+func InspectContainer(ctx context.Context, cm ContainerManager, id string) (inspection ContainerInspection, err error) {
 	cont, err := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return ContainerInspection{}, fmt.Errorf("Failed to inspect container %s: %w", id, err)
@@ -185,18 +202,19 @@ func InspectContainer(ctx context.Context, cm ContainerManager, id string) (Cont
 	if err != nil {
 		return ContainerInspection{}, fmt.Errorf("Failed to parse end time: %w", err)
 	}
-	return ContainerInspection{
+	inspection = ContainerInspection{
 		ExitCode:  contState.ExitCode,
 		StartTime: start,
 		EndTime:   end,
 		Errors:    contState.Error,
 		OOMKilled: contState.OOMKilled,
 		Status:    string(contState.Status),
-	}, nil
+	}
+	return inspection, err
 }
 
 // Removes the specified container.
-func RemoveContainer(ctx context.Context, cm ContainerManager, id string) error {
+func RemoveContainer(ctx context.Context, cm ContainerManager, id string) (err error) {
 	cont, err := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("Failed to inspect container %s: %w", id, err)

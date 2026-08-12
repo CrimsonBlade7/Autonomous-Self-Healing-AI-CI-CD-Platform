@@ -17,12 +17,12 @@ type GitClient interface {
 }
 
 // Creates a unique temp directory in workspaceDir
-func tempWorkspace(dir, sha string) (string, func() error, error) {
-	path, err := os.MkdirTemp(dir, fmt.Sprintf("sha%s_*", sha))
+func tempWorkspace(dir, sha string) (path string, cleanup func() error, err error) {
+	path, err = os.MkdirTemp(dir, fmt.Sprintf("sha%s_*", sha))
 	if err != nil {
 		return "", nil, err
 	}
-	cleanup := func() error {
+	cleanup = func() error {
 		cleanupErr := os.RemoveAll(path)
 		if cleanupErr != nil {
 			return fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
@@ -33,9 +33,9 @@ func tempWorkspace(dir, sha string) (string, func() error, error) {
 }
 
 // Initializes the workspace and clones it into dest (which should be temp_workspaces)
-func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (string, func() error, error) {
+func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (path string, cleanup func() error, err error) {
 
-	path, cleanup, err := tempWorkspace(config.WsDir, pr.HeadSHA)
+	path, cleanup, err = tempWorkspace(config.WsDir, pr.HeadSHA)
 
 	err = cli.InitRepo(ctx, path, pr)
 	if err != nil {
@@ -51,7 +51,7 @@ func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (st
 }
 
 // Clears the temp_workspace directory
-func ClearWorkspaces() error {
+func ClearWorkspaces() (err error) {
 
 	// Get original folder permissions to recreate it accurately (optional)
 	info, err := os.Stat(config.WsDir)
@@ -75,7 +75,7 @@ func ClearWorkspaces() error {
 
 // Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
 // If a test name does not exist, it will be logged, but no errors will be returned.
-func InsertTests(path string, data []byte) error {
+func InsertTests(path string, data []byte) (err error) {
 	file, err := os.Create(config.GetPath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
