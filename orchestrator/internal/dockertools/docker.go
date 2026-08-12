@@ -26,7 +26,7 @@ type ContainerManager interface {
 	ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error)
 	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
 	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
-	ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) client.ContainerInspectResult
+	ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error)
 }
 
 type ContainerInspection struct {
@@ -35,7 +35,7 @@ type ContainerInspection struct {
 	EndTime   time.Time
 	Errors    string
 	OOMKilled bool
-	State     string
+	Status    string
 }
 
 type TarBuilder interface {
@@ -117,7 +117,8 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	return tag, nil
 }
 
-// Builds and runs a container labeled with tag. The caller is responsible for closing the logs.
+// Builds and runs a container labeled with tag. Returns the id, stdout, stderr, and an error.
+// The caller is responsible for closing the logs.
 func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string, io.ReadCloser, io.ReadCloser, error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -169,16 +170,38 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (string,
 	return cont.ID, outReader, errReader, nil
 }
 
-func InspectContainer(ctx context.Context, cm ContainerManager, id string) ContainerInspection {
-	inspectResult := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-	ci := ContainerInspection{
-		ExitCode: inspectResult.Container.State.ExitCode,
+// Returns current state of a completed container as a ContainerInspection struct.
+func InspectContainer(ctx context.Context, cm ContainerManager, id string) (ContainerInspection, error) {
+	cont, err := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		return ContainerInspection{}, fmt.Errorf("Failed to inspect container %s: %w", id, err)
 	}
+	contState := cont.Container.State
+	start, err := time.Parse(time.RFC3339Nano, contState.StartedAt)
+	if err != nil {
+		return ContainerInspection{}, fmt.Errorf("Failed to parse start time: %w", err)
+	}
+	end, err := time.Parse(time.RFC3339Nano, contState.FinishedAt)
+	if err != nil {
+		return ContainerInspection{}, fmt.Errorf("Failed to parse end time: %w", err)
+	}
+	return ContainerInspection{
+		ExitCode:  contState.ExitCode,
+		StartTime: start,
+		EndTime:   end,
+		Errors:    contState.Error,
+		OOMKilled: contState.OOMKilled,
+		Status:    string(contState.Status),
+	}, nil
 }
 
+// Removes the specified container.
 func RemoveContainer(ctx context.Context, cm ContainerManager, id string) error {
-	cont := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
-	_, err := cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{})
+	cont, err := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		return fmt.Errorf("Failed to inspect container %s: %w", id, err)
+	}
+	_, err = cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{})
 	if err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}

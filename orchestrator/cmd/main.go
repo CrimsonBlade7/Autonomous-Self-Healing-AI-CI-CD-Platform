@@ -70,6 +70,7 @@ TODO List:
 	- container timeout *
 	- container mem cap *
 	- log storage
+	- properly handle closing errors
 
 Wishlist
 	- multi-service testing

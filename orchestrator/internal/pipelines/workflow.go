@@ -128,30 +128,63 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) error {
 					slog.Error("Failed to build image", "error", err)
 					continue
 				}
-				logOut, logErr, err := dockertools.RunContainer(ctx, cli, tag)
-				if err != nil {
-					slog.Error("Failed to build container", "error", err)
-					continue
-				}
-				defer logOut.Close()
-				defer logErr.Close()
 
-				logOutBytes, err := io.ReadAll(logOut)
+				// Process the container
+				contInspect, logOut, logErr, err := func() (dockertools.ContainerInspection, string, string, error) {
+					contID, logOut, logErr, err := dockertools.RunContainer(ctx, cli, tag)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to build container: %w", err)
+					}
+
+					// Close the logs and remove container
+					// err is updated before this IIFE returns
+					defer func() {
+						err = logOut.Close()
+						if err != nil {
+							err = fmt.Errorf("Failed to close out logs: %w", err)
+						}
+						err = logErr.Close()
+						if err != nil {
+							err = fmt.Errorf("Failed to close error logs: %w", err)
+						}
+						err = dockertools.RemoveContainer(ctx, cli, contID)
+						if err != nil {
+							err = fmt.Errorf("Failed to remove container: %w", err)
+						}
+					}()
+
+					logOutBytes, err := io.ReadAll(logOut)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read output logs: %w", err)
+					}
+					logOutString := string(logOutBytes)
+					logErrBytes, err := io.ReadAll(logErr)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read error logs: %w", err)
+					}
+					logErrString := string(logErrBytes)
+
+					inspect, err := dockertools.InspectContainer(ctx, cli, contID)
+					if err != nil {
+						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to inspect container: %w", err)
+					}
+
+					return inspect, logOutString, logErrString, err
+				}()
 				if err != nil {
-					slog.Error("Failed to read output logs", "error", err)
+					slog.Error("Container failed", "error", err)
 				}
-				logOutString := string(logOutBytes)
-				logErrBytes, err := io.ReadAll(logErr)
-				if err != nil {
-					slog.Error("Failed to read error logs", "error", err)
-				}
-				logErrString := string(logErrBytes)
 
 				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
-					Wfid: wf.wfid,
-					Stdout: logOutString,
-					Stderr: logErrString,
-					ExitCode: ,
+					Wfid:     wf.wfid,
+					Stdout:   logOut,
+					Stderr:   logErr,
+					StartTime: contInspect.StartTime,
+					EndTime: contInspect.EndTime,
+					Errors: contInspect.Errors,
+					Status: contInspect.Status,
+					OOMKilled: contInspect.OOMKilled,
+					ExitCode: contInspect.ExitCode,
 				})
 
 			default:
