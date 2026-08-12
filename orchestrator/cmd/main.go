@@ -65,14 +65,11 @@ TODO List:
 		- cancel running containers
 		- clear images (optional?)
 		- if patches for the wrong sha are received, discard them
-	- figure out delivery mechanisms
 	- handle hanging workflows due to errors
 	- dockerize this project
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?
 	- .env injection *
-	- container timeout *
-	- container mem cap *
 	- log storage
 
 Wishlist
