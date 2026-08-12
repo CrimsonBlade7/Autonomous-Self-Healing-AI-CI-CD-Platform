@@ -133,6 +133,9 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id string, outReader io.ReadCloser, errReader io.ReadCloser, err error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config: &container.Config{
+			Env: config.TestingEnvSlice,
+		},
 		HostConfig: &container.HostConfig{
 			Resources: container.Resources{
 				Memory: int64(config.CONTAINER_MEMORY_CAP * config.MB),
