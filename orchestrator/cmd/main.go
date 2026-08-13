@@ -54,13 +54,11 @@ func main() {
 
 	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
 
-	go func() {
-		err = servertools.StartServer(mainCtx, taskChannel)
-		if err != nil {
-			slog.Error("Server failure", "error", err)
-			return
-		}
-	}()
+	err = servertools.StartServer(mainCtx, taskChannel)
+	if err != nil {
+		slog.Error("Server failure", "error", err)
+		return
+	}
 }
 
 /*
