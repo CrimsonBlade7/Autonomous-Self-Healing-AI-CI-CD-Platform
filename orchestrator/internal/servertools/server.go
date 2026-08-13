@@ -39,6 +39,7 @@ func seconds(n int) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
+// Gets the user that caused the webhook.
 func getSender(data []byte) (login string, err error) {
 	type temp struct {
 		Sender struct {

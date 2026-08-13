@@ -64,7 +64,6 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 	for {
 		select {
 		case <-ctx.Done():
-
 			return nil
 		case job := <-wf.Jobs:
 			switch job.JobType {
@@ -131,51 +130,16 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 				}
 
 				// Process the container
-				contInspect, logOut, logErr, err := func() (dockertools.ContainerInspection, string, string, error) {
-					subContext, cancel := context.WithTimeout(ctx, time.Duration(config.CONTAINER_TIMEOUT)*time.Minute)
-					defer cancel()
-					contID, logOut, logErr, err := dockertools.RunContainer(subContext, cli, tag)
-					if err != nil {
-						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to build container: %w", err)
-					}
-
-					// Close the logs and remove container
-					// err is updated before this IIFE returns
-					defer func() {
-						err = logOut.Close()
-						if err != nil {
-							err = fmt.Errorf("Failed to close out logs: %w", err)
-						}
-						err = logErr.Close()
-						if err != nil {
-							err = fmt.Errorf("Failed to close error logs: %w", err)
-						}
-						err = dockertools.RemoveContainer(ctx, cli, contID)
-						if err != nil {
-							err = fmt.Errorf("Failed to remove container: %w", err)
-						}
-					}()
-
-					logOutBytes, err := io.ReadAll(logOut)
-					if err != nil {
-						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read output logs: %w", err)
-					}
-					logOutString := string(logOutBytes)
-					logErrBytes, err := io.ReadAll(logErr)
-					if err != nil {
-						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read error logs: %w", err)
-					}
-					logErrString := string(logErrBytes)
-
-					inspect, err := dockertools.InspectContainer(ctx, cli, contID)
-					if err != nil {
-						return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to inspect container: %w", err)
-					}
-
-					return inspect, logOutString, logErrString, err
-				}()
+				contInspect, logOut, logErr, err := processContainer(ctx, tag, cli)
 				if err != nil {
 					slog.Error("Container failed", "error", err)
+					continue
+				}
+				
+				err = dockertools.RemoveImage(ctx, cli, tag)
+				if err != nil {
+					slog.Error("Failed to remove image", "error", err)
+					continue
 				}
 
 				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
@@ -189,12 +153,61 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 					OOMKilled: contInspect.OOMKilled,
 					ExitCode:  contInspect.ExitCode,
 				})
+				if err != nil {
+					slog.Error("Failed to send request to AI Engine", "error", err)
+					continue
+				}
 
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))
 			}
 		}
 	}
+}
+
+// Creates a container, runs it, and removes it. Returns a ContainerInspection, stdout, stderr, and an error.
+func processContainer(ctx context.Context, tag string, cli *client.Client) (inspect dockertools.ContainerInspection, logOutString string, logErrString string, err error) {
+	subContext, cancel := context.WithTimeout(ctx, time.Duration(config.CONTAINER_TIMEOUT)*time.Minute)
+	defer cancel()
+	contID, logOut, logErr, err := dockertools.RunContainer(subContext, cli, tag)
+	if err != nil {
+		return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to build container: %w", err)
+	}
+
+	// Close the logs and remove container
+	// err is updated before this IIFE returns
+	defer func() {
+		err = logOut.Close()
+		if err != nil {
+			err = fmt.Errorf("Failed to close out logs: %w", err)
+		}
+		err = logErr.Close()
+		if err != nil {
+			err = fmt.Errorf("Failed to close error logs: %w", err)
+		}
+		err = dockertools.RemoveContainer(ctx, cli, contID)
+		if err != nil {
+			err = fmt.Errorf("Failed to remove container: %w", err)
+		}
+	}()
+
+	logOutBytes, err := io.ReadAll(logOut)
+	if err != nil {
+		return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read output logs: %w", err)
+	}
+	logOutString = string(logOutBytes)
+	logErrBytes, err := io.ReadAll(logErr)
+	if err != nil {
+		return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to read error logs: %w", err)
+	}
+	logErrString = string(logErrBytes)
+
+	inspect, err = dockertools.InspectContainer(ctx, cli, contID)
+	if err != nil {
+		return dockertools.ContainerInspection{}, "", "", fmt.Errorf("Failed to inspect container: %w", err)
+	}
+
+	return inspect, logOutString, logErrString, err
 }
 
 func (wf *Workflow) GetWfid() int {

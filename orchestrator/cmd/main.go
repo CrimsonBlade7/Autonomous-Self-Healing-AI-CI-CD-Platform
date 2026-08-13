@@ -46,6 +46,12 @@ func main() {
 		return
 	}
 
+	err = dockertools.ClearOldContainers(mainCtx, cli)
+	if err != nil {
+		slog.Error("Failed to clean old containers", "error", err)
+		return
+	}
+
 	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
 
 	go func() {
@@ -59,10 +65,8 @@ func main() {
 
 /*
 TODO List:
-	- testing
-		- add tests
+	- testing *
 	- handle receiving prs while workflow is running
-		- cancel running containers
 		- clear images (optional?)
 		- if patches for the wrong sha are received, discard them
 	- handle hanging workflows due to errors

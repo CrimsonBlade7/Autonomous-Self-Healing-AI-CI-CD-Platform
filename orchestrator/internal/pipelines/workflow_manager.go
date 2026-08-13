@@ -17,35 +17,35 @@ type WorkflowObject struct {
 
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
-	idMap map[int]WorkflowObject
-	mutex sync.RWMutex
+	workflows map[int]WorkflowObject
+	mutex     sync.RWMutex
 }
 
 // Creates a new workflow manager.
 func NewWorkflowManager() *WorkflowManager {
 	return &WorkflowManager{
-		idMap: make(map[int]WorkflowObject),
-		mutex: sync.RWMutex{},
+		workflows: make(map[int]WorkflowObject),
+		mutex:     sync.RWMutex{},
 	}
 }
 
 func (wfm *WorkflowManager) Get(id int) (WorkflowObject, bool) {
 	wfm.mutex.RLock()
 	defer wfm.mutex.RUnlock()
-	val, exists := wfm.idMap[id]
+	val, exists := wfm.workflows[id]
 	return val, exists
 }
 
 func (wfm *WorkflowManager) Set(id int, wo WorkflowObject) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
-	wfm.idMap[id] = wo
+	wfm.workflows[id] = wo
 }
 
 func (wfm *WorkflowManager) Remove(id int) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
-	delete(wfm.idMap, id)
+	delete(wfm.workflows, id)
 }
 
 // Starts the run pipeline. Handles incoming workflows.
@@ -57,6 +57,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 		case task := <-taskChannel:
 			switch t := task.(type) {
 			case types.PullRequest:
+				wfm.workflows[t.Number].cancel()
 				err := wfm.handlePullRequest(ctx, cli, t)
 				if err != nil {
 					slog.Error("Failed to handle pull request", "error", err)
@@ -88,6 +89,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 	num := pr.Number
 	wfo, exists := wfm.Get(num)
 	wf := wfo.workflow
+
 	switch pr.Action {
 	case "opened":
 		// Creates and starts a new workflow for a new pr
@@ -98,21 +100,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
 		}
-		subCtx, end := context.WithCancel(ctx)
-		wfm.Set(num, WorkflowObject{
-			workflow: nwf,
-			cancel:   end,
-		})
-		go func() {
-			defer end()
-			defer wfm.Remove(num)
-			err := nwf.runWorkflow(subCtx, cli)
-			if err != nil {
-				slog.Error("Workflow failed", "error", err)
-				end()
-			}
-		}()
-		wf.Jobs <- Job{JobType: OPEN}
+		err = wfm.openPr(ctx, num, nwf, cli)
+		if err != nil {
+			return fmt.Errorf("Failed to open pr: %w", err)
+		}
 
 	case "closed":
 		wfo.cancel()
@@ -122,21 +113,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		wf.Jobs <- Job{JobType: CLOSE}
 
 	case "reopened":
-		subCtx, end := context.WithCancel(ctx)
-		wfm.Set(num, WorkflowObject{
-			workflow: wf,
-			cancel:   end,
-		})
-		go func() {
-			defer end()
-			defer wfm.Remove(num)
-			err := wf.runWorkflow(subCtx, cli)
-			if err != nil {
-				slog.Error("Workflow failed", "error", err)
-				end()
-			}
-		}()
-		wf.Jobs <- Job{JobType: OPEN}
+		err = wfm.openPr(ctx, pr.Number, wf, cli)
+		if err != nil {
+			return fmt.Errorf("Failed to open pr: %w", err)
+		}
 
 	case "edited", "synchronize":
 		wf.Jobs <- Job{
@@ -148,4 +128,23 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		slog.Info("Unsupported pull request action", "action", pr.Action)
 	}
 	return nil
+}
+
+func (wfm *WorkflowManager) openPr(ctx context.Context, prNum int, wf *Workflow, cli *client.Client) (err error) {
+	subCtx, end := context.WithCancel(ctx)
+	wfm.Set(prNum, WorkflowObject{
+		workflow: wf,
+		cancel:   end,
+	})
+	go func() {
+		defer end()
+		defer wfm.Remove(prNum)
+		wfErr := wf.runWorkflow(subCtx, cli)
+		if wfErr != nil {
+			end()
+			err = wfErr
+		}
+	}()
+	wf.Jobs <- Job{JobType: OPEN}
+	return err
 }

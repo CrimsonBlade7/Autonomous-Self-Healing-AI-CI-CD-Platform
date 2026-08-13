@@ -17,11 +17,12 @@ import (
 
 type ImageManager interface {
 	ImageList(ctx context.Context, options client.ImageListOptions) (client.ImageListResult, error)
-	ImageRemove(ctx context.Context, imageID string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
+	ImageRemove(ctx context.Context, tag string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
 	ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
 }
 
 type ContainerManager interface {
+	ContainerList(ctx context.Context, options client.ContainerListOptions) (client.ContainerListResult, error)
 	ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
 	ContainerRemove(ctx context.Context, containerID string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
 	ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error)
@@ -45,7 +46,7 @@ type TarBuilder interface {
 
 var ImageBuildErr error = errors.New("Image build failed")
 
-// Cleans up old images
+// Removes up old images
 func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 	images, err := im.ImageList(ctx, client.ImageListOptions{All: true})
 	if err != nil {
@@ -53,6 +54,21 @@ func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 	}
 	for _, item := range images.Items {
 		_, err = im.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
+		if err != nil {
+			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
+		}
+	}
+	return nil
+}
+
+// Removes up old containers
+func ClearOldContainers(ctx context.Context, cm ContainerManager) (err error) {
+	conts, err := cm.ContainerList(ctx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return fmt.Errorf("Failed to fetch container list: %w", err)
+	}
+	for _, item := range conts.Items {
+		_, err = cm.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{})
 		if err != nil {
 			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
@@ -228,6 +244,15 @@ func RemoveContainer(ctx context.Context, cm ContainerManager, id string) (err e
 		return fmt.Errorf("Failed to inspect container %s: %w", id, err)
 	}
 	_, err = cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{})
+	if err != nil {
+		return fmt.Errorf("Failed to remove container: %w", err)
+	}
+	return nil
+}
+
+// Removes the specified image.
+func RemoveImage(ctx context.Context, im ImageManager, tag string) (err error) {
+	_, err = im.ImageRemove(ctx, tag, client.ImageRemoveOptions{})
 	if err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
