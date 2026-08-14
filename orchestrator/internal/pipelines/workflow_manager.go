@@ -70,11 +70,14 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 					continue
 				}
 				if t.Done {
-					wfo.workflow.Jobs <- Job{JobType: COMMIT_PUSH}
+					wfo.workflow.Jobs <- Job{
+						JobType: COMMIT_PUSH,
+						Task:    t,
+					}
 				} else {
 					wfo.workflow.Jobs <- Job{
 						JobType: RUN_TESTS,
-						Data:    t.Tests,
+						Task:    t,
 					}
 				}
 
@@ -100,7 +103,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
 		}
-		err = wfm.openPr(ctx, num, nwf, cli)
+		err = wfm.openPr(ctx, cli, pr, nwf)
 		if err != nil {
 			return fmt.Errorf("Failed to open pr: %w", err)
 		}
@@ -110,10 +113,13 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if pr.Merged {
 			wfm.Remove(num)
 		}
-		wf.Jobs <- Job{JobType: CLOSE}
+		wf.Jobs <- Job{
+			JobType: CLOSE,
+			Task:    pr,
+		}
 
 	case "reopened":
-		err = wfm.openPr(ctx, pr.Number, wf, cli)
+		err = wfm.openPr(ctx, cli, pr, wf)
 		if err != nil {
 			return fmt.Errorf("Failed to open pr: %w", err)
 		}
@@ -130,21 +136,24 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 	return nil
 }
 
-func (wfm *WorkflowManager) openPr(ctx context.Context, prNum int, wf *Workflow, cli *client.Client) (err error) {
+func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr types.PullRequest, wf *Workflow) (err error) {
 	subCtx, end := context.WithCancel(ctx)
-	wfm.Set(prNum, WorkflowObject{
+	wfm.Set(pr.Number, WorkflowObject{
 		workflow: wf,
 		cancel:   end,
 	})
 	go func() {
 		defer end()
-		defer wfm.Remove(prNum)
+		defer wfm.Remove(pr.Number)
 		wfErr := wf.runWorkflow(subCtx, cli)
 		if wfErr != nil {
 			end()
 			err = wfErr
 		}
 	}()
-	wf.Jobs <- Job{JobType: OPEN}
+	wf.Jobs <- Job{
+		JobType: OPEN,
+		Task:    wf.pullRequest,
+	}
 	return err
 }

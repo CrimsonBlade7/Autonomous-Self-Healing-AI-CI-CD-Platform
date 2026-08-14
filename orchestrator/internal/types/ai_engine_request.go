@@ -7,15 +7,20 @@ import (
 // The request sent to the AI Engine.
 // Request should come with a HMAC-Signature-256.
 // Contains the pull request and the logs.
+// The pull request and the test results are mutually exclusive.
 type AIEngineRequest struct {
-	Wfid        int // Mandatory
+	Wfid int // Mandatory
+
+	// Current pull request
 	PullRequest PullRequest
-	Stdout      string
-	Stderr      string
-	StartTime   time.Time
-	EndTime     time.Time
-	Errors      string // Compile or entry command errors
-	Status      string // One of "created", "running", "paused", "restarting", "removing", "exited", or "dead"
-	OOMKilled   bool   // Killed: out of memory
-	ExitCode    int
+
+	// Test results
+	Stdout    string
+	Stderr    string
+	StartTime time.Time
+	EndTime   time.Time
+	Errors    string // Compile or entry command errors
+	Status    string // One of "created", "running", "paused", "restarting", "removing", "exited", or "dead"
+	OOMKilled bool   // Killed: out of memory
+	ExitCode  int
 }

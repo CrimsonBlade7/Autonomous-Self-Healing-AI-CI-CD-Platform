@@ -16,8 +16,9 @@ type Task interface {
 // Response should come with a HMAC-Signature-256 header.
 // Contains the tests and the summary.
 type AIEngineResponse struct {
-	Wfid int
-	Done bool
+	Wfid        int
+	PullRequest PullRequest
+	Done        bool
 	// Tests are included if the workflow needs to continue.
 	// Summary is included only if the workflow is complete.
 	Tests   []byte

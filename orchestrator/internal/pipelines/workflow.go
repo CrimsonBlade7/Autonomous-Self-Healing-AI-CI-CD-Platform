@@ -43,7 +43,6 @@ type Job struct {
 	// - COMMIT_PUSH
 	JobType int
 	Task    types.Task // optional
-	Data    []byte     // optional
 }
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
@@ -103,20 +102,33 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 				wf.attemptNum = 0
 				pr, ok := job.Task.(types.PullRequest)
 				if !ok {
-					panic("Sync should always come from a pull request.")
+					panic("UPDATE_PR should always come from a pull request.")
 				}
 				wf.pullRequest = pr
-				err := servertools.SendRequestAIEngine(ctx, "sync", types.AIEngineRequest{Wfid: wf.wfid})
+				err := servertools.SendRequestAIEngine(ctx, "update_pr", types.AIEngineRequest{
+					Wfid:        wf.wfid,
+					PullRequest: pr,
+				})
 				if err != nil {
 					return fmt.Errorf("Failed to send request to ai engine: %w", err)
 				}
 
 			case RUN_TESTS:
+				// TODO: block tests from the wrong sha
+				aier, ok := job.Task.(types.AIEngineResponse)
+				if !ok {
+					panic("RUN_TESTS should always come from a pull request.")
+				}
+				if aier.PullRequest != wf.pullRequest {
+					slog.Info("AI Engine Response pull request does not match the current pull request")
+					continue
+				}
 				if wf.attemptNum > config.MAX_TEST_PATCHING_ATTEMPTS {
 					return fmt.Errorf("Test generation failed: too many attempts")
 				}
 				wf.attemptNum++
-				err := wstools.InsertTests(wf.path, job.Data)
+
+				err := wstools.InsertTests(wf.path, aier.Tests)
 				if err != nil {
 					slog.Error("Failed to insert tests", "error", err)
 					continue
@@ -135,7 +147,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 					slog.Error("Container failed", "error", err)
 					continue
 				}
-				
+
 				err = dockertools.RemoveImage(ctx, cli, tag)
 				if err != nil {
 					slog.Error("Failed to remove image", "error", err)
@@ -157,6 +169,9 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 					slog.Error("Failed to send request to AI Engine", "error", err)
 					continue
 				}
+
+			case COMMIT_PUSH:
+				// TODO: implement commit push
 
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))
