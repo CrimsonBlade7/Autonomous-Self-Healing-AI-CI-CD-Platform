@@ -1,0 +1,4 @@
+FAKE_VAR1="meat" 
+FAKE_VAR2="feet" 
+FAKE_VAR3="toe" 
+FAKE_VAR4="fish" 

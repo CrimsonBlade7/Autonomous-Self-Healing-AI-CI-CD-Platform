@@ -1,4 +1,4 @@
-module github.com/CrimsonBlade7/Autonomous-Self-Healing-AI-CI-CD-Platform/orchestrator
+module github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator
 
 go 1.26.4
 

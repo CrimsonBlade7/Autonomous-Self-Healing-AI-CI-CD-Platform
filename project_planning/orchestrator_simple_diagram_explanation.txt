@@ -1,0 +1,18 @@
+Lifecycle
+1. Receive PR.
+2. Send to workflow manager to start a new workflow with an "open" job.
+3. The workflow fetches and checksout the corresponding commit.
+4. The workflow sends the PR to the server to send to the AI engine.
+5. The AI engine returns the tests to the server.
+6. The server sends the received tests to the workflow manager.
+7. The workflow manager directs the tests to the correct workflow.
+8. The workflow applies and runs the tests in a docker container.
+9. The workflow returns the logs to the server.
+10. The server sends the logs to the AI engine.
+11. If the AI engine is not satisfied, it fixes the tests and repeats to step 5.
+12. If too many attempts are made, the workflow automatically fails.
+13. If the AI engine is satisfied, it returns a summary.
+14. The summary and the tests are then committed and pushed to remote. 
+
+Workflow Manager: Receives incoming requests, starts a new workflow if needed, and creates + assigns the job to the correct workflow. 
+Workflow: Receives and handles jobs. Exactly one workflow per PR.
