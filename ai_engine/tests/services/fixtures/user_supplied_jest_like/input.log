@@ -1,0 +1,5 @@
+FAIL tests/sum.test.ts
+  ● sum should add two numbers
+
+TypeError: Cannot read properties of undefined (reading 'value')
+    at Object.<anonymous> (tests/sum.test.ts:8:14)

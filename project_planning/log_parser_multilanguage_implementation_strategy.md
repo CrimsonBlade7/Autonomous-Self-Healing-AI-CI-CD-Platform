@@ -30,12 +30,13 @@ Recommended v1.1 extensions:
 ## 4) Target Architecture
 Implement parser pipeline in this order:
 1. Normalize text
-2. Detect language and framework
-3. Extract failing test identifier
-4. Extract root-cause block (traceback/panic/compiler message)
-5. Extract canonical `error_type` and `root_cause_message`
-6. Build normalized compact `error_signature`
-7. Return schema + confidence
+2. Segment log into candidate failure windows (mixed output safe)
+3. Detect language and framework per window
+4. Extract failing test identifier
+5. Extract root-cause block (traceback/panic/compiler message)
+6. Extract canonical `error_type` and `root_cause_message`
+7. Build normalized compact `error_signature`
+8. Return schema + confidence
 
 Suggested module split under `ai_engine/app/services/`:
 - `log_analyzer.py` (public entrypoint)
@@ -59,6 +60,12 @@ Example signals:
 
 Select detector with highest score above threshold. If below threshold, use fallback parser.
 
+Confidence contract (required for deterministic behavior):
+- Detector score is a weighted sum of matched signals, normalized to 0.0-1.0.
+- Final confidence should include winner margin over runner-up detector.
+- If winner confidence < minimum threshold, parser must route to fallback parser.
+- Keep detector weights in code constants so test fixtures can validate score stability.
+
 ## 6) Signature Normalization Rules
 Normalize high-variance message content before building signature:
 - Lowercase
@@ -71,6 +78,18 @@ Normalize high-variance message content before building signature:
 Signature template (v1.1):
 `{language}:{error_type} | {failing_test} | {normalized_message}`
 
+Signature stability guardrails:
+- Normalize `failing_test` before signature construction (strip shard suffixes, line numbers, and unstable parameter payloads).
+- If failing test extraction confidence is low, allow `unknown` in signature to avoid over-fragmentation.
+- Keep signature format stable across releases and version only when template changes.
+
+Root-cause extraction guidance by ecosystem:
+- Python: prefer final exception in chained traceback blocks (`The above exception was the direct cause...`).
+- Java: walk `Caused by:` chain and choose deepest cause message as root cause.
+- Node: prefer terminal error line + first relevant stack frame from test/runtime section.
+- Go: prioritize nearest `panic:` or compile diagnostic near final `FAIL` boundary.
+- Rust: prioritize terminal `error[E...]` diagnostic or panic line with context.
+
 ## 7) Phased Delivery Plan
 
 ### Phase 1 (0.5-1 day): Parser Foundation
@@ -82,6 +101,7 @@ Deliverables:
 Acceptance:
 - No regressions on current Python examples.
 - Parser always returns valid object.
+- Existing callers that depend on v1 schema remain compatible.
 
 ### Phase 2 (1 day): Python Hardening
 Deliverables:
@@ -122,6 +142,7 @@ Deliverables:
 Acceptance:
 - RAG receives compact, consistent signatures.
 - Unknown/fallback usage measurable.
+- Parse latency and memory metrics emitted for large-log observability.
 
 ## 8) Test Plan
 Use fixture-driven tests under `ai_engine/tests/services/log_parsers/`.
@@ -141,13 +162,20 @@ Assertions per fixture:
 - signature normalized and length-bounded
 - parser does not throw
 
+Large-log performance checks:
+- Add fixtures in 5 MB, 10 MB, and 20 MB ranges with mixed tool output.
+- Define target SLA (for example, parse under 2 seconds for 10 MB logs on CI runner baseline).
+- Verify streaming-safe behavior (no quadratic scans, bounded intermediate buffers).
+
 ## 9) Risk Register and Mitigations
 - Risk: false language detection in mixed logs.
-  - Mitigation: scoring threshold + fallback parser + confidence.
+  - Mitigation: window segmentation + scoring threshold + fallback parser + confidence margin.
 - Risk: over-normalization removes useful semantics.
   - Mitigation: normalize only known noisy token types; keep raw stack snippet.
 - Risk: parser growth becomes hard to maintain.
   - Mitigation: strict detector interface + fixtures + CI regression tests.
+- Risk: large logs degrade latency/memory.
+  - Mitigation: bounded scan windows, capped stack extraction, and perf fixtures in CI.
 
 ## 10) Definition of Done (v1)
 - Python/Node/Go/Java/Rust detectors implemented.
@@ -155,8 +183,15 @@ Assertions per fixture:
 - >= 30 fixture tests passing across ecosystems.
 - Existing parser interface still works for current callers.
 - Compact output quality is acceptable for retrieval and patch generation.
+- Confidence and fallback behavior are deterministic and fixture-validated.
+- Large-log performance SLA passes on CI baseline.
 
-## 11) Suggested Immediate Next 3 Tasks
+## 11) Compatibility and Migration Notes
+- v1 fields remain required: `error_type`, `failing_test`, `stack_trace_lines`, `error_signature`.
+- v1.1 fields (`language`, `framework`, `confidence`, `root_cause_message`) are additive and optional for callers until all integrations are upgraded.
+- Public analyzer entrypoint remains stable; detector internals can evolve behind interface boundaries.
+
+## 12) Suggested Immediate Next 3 Tasks
 1. Create detector interface and fallback parser skeleton.
 2. Implement Python hardening and message normalization.
 3. Add first fixture suite (Python + Node + Go) and CI test job.

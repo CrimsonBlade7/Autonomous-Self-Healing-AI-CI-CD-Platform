@@ -1,0 +1,8 @@
+{
+  "error_type": "TypeError",
+  "failing_test": "unknown",
+  "stack_trace_lines": [
+    "TypeError: Cannot read properties of undefined (reading 'value')"
+  ],
+  "error_signature": "TypeError | unknown | Cannot read properties of undefined (reading 'value')"
+}

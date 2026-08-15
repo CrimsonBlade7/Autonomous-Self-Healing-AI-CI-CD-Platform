@@ -1,0 +1,8 @@
+{
+  "name": "unknown_truncated",
+  "source": "ci",
+  "language": "unknown",
+  "framework": "unknown",
+  "expected_confidence_band": "low",
+  "notes": "Represents truncated or low-signal logs that should route to fallback behavior."
+}
