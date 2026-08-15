@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ type Job struct {
 	// - RUN_TESTS
 	// - COMMIT_PUSH
 	JobType int
-	Task    types.Task // optional
+	Task    types.Task
 }
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
@@ -172,6 +173,15 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 
 			case COMMIT_PUSH:
 				// TODO: implement commit push
+				aier, ok := job.Task.(types.AIEngineResponse)
+				if !ok {
+					panic("RUN_TESTS should always come from a pull request.")
+				}
+				err = wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary)
+				if err != nil {
+					slog.Error("Failed to write summary", "error", err)
+					continue
+				}
 
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))

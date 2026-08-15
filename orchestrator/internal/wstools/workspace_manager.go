@@ -12,7 +12,7 @@ import (
 
 type GitClient interface {
 	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
-	CommitPush(commitMsg, wsPath, branch, sha string) error
+	CommitPush(commitMsg, wsPath, branch, sha string) (string, error)
 	UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error
 }
 
@@ -85,6 +85,21 @@ func InsertTests(path string, data []byte) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to write tests: %w", err)
 	}
-	
+
+	return nil
+}
+
+// Adds a summary file at path containing text.
+func WriteSummary(path, text string) error {
+	file, err := os.Create(config.GetPath(path))
+	if err != nil {
+		return fmt.Errorf("Failed to create summary file: %w", err)
+	}
+
+	_, err = file.Write([]byte(text))
+	if err != nil {
+		return fmt.Errorf("Failed to write summary: %w", err)
+	}
+
 	return nil
 }

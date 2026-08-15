@@ -37,26 +37,29 @@ func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullR
 	return nil
 }
 
-func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (err error) {
+func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha string, err error) {
 
 	repo, err := git.PlainOpen(wsPath)
 	if err != nil {
-		return fmt.Errorf("Failed to open the repository at %s: %w", wsPath, err)
+		return "", fmt.Errorf("Failed to open the repository at %s: %w", wsPath, err)
 	}
 
 	wt, err := checkoutSHA(repo, sha)
 	if err != nil {
-		return fmt.Errorf("Failed to checkout the sha: %w", err)
+		return "", fmt.Errorf("Failed to checkout the sha: %w", err)
 	}
 
 	err = wt.AddWithOptions(&git.AddOptions{All: true})
 	if err != nil {
-		return fmt.Errorf("Failed to add changes: %w", err)
+		return "", fmt.Errorf("Failed to add changes: %w", err)
 	}
+
+	hash, err := wt.Commit(commitMsg, &git.CommitOptions{All: true})
+	newSha = hash.String()
 
 	remote, err := repo.Remote("origin")
 	if err != nil {
-		return fmt.Errorf("Failed to get remote: %w", err)
+		return "", fmt.Errorf("Failed to get remote: %w", err)
 	}
 
 	err = repo.Push(&git.PushOptions{
@@ -68,9 +71,9 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (err er
 		Force: true,
 	})
 	if err != nil {
-		return fmt.Errorf("Failed to push changes: %w", err)
+		return "", fmt.Errorf("Failed to push changes: %w", err)
 	}
-	return nil
+	return newSha, nil
 }
 
 func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) (err error) {

@@ -16,9 +16,8 @@ var WsDir string   // The relative directory that contains all workspaces.
 var GithubToken string
 var RepositoryUrl string
 var GithubSecret string
-var GithubBotLogin string
 var AIEngineSecret string
-var AIEnginePort string
+var AIEnginePort string = "8000"
 var TestingEnvSlice []string
 
 const (
@@ -78,10 +77,6 @@ func loadEnv() (err error) {
 	GithubSecret = os.Getenv("GITHUB_WEBHOOK_SECRET")
 	if GithubSecret == "" {
 		return fmt.Errorf("Github secret is empty.")
-	}
-	GithubBotLogin = os.Getenv("GITHUB_BOT_LOGIN")
-	if GithubBotLogin == "" {
-		return fmt.Errorf("Github bot login is empty.")
 	}
 	Port = os.Getenv("PORT")
 	if Port == "" {

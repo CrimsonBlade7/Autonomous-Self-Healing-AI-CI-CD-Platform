@@ -19,6 +19,7 @@ func main() {
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
 	taskChannel := make(chan types.Task)
+	pushedCommits := make(map[int]string)
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
@@ -52,9 +53,9 @@ func main() {
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pushedCommits)
 
-	err = servertools.StartServer(mainCtx, taskChannel)
+	err = servertools.StartServer(mainCtx, taskChannel, pushedCommits)
 	if err != nil {
 		slog.Error("Server failure", "error", err)
 		return
@@ -65,14 +66,15 @@ func main() {
 TODO List:
 	- testing *
 	- handle receiving prs while workflow is running
-		- clear images (optional?)
 		- if patches for the wrong sha are received, discard them
-	- handle hanging workflows due to errors
+	- handle hanging workflows due to errors *
 	- dockerize this project
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?
 	- log storage
 	- handle dead containers
+	- insertTests need file name
+	- inject PAT into CommitPush and UpdateWorkspace
 
 Wishlist
 	- multi-service testing

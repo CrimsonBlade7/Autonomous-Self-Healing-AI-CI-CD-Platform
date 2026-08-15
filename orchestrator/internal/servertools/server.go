@@ -57,7 +57,7 @@ func getSender(data []byte) (login string, err error) {
 }
 
 // Github webhook handler
-func whHandler(taskChannel chan types.Task) http.HandlerFunc {
+func whHandler(taskChannel chan types.Task, pushedCommits map[int]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			closeErr := r.Body.Close()
@@ -85,17 +85,6 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 			return
 		}
 
-		sender, err := getSender(body)
-		if err != nil {
-			slog.Error("Failed to get the webhook sender", "error", err)
-			w.WriteHeader(http.StatusBadRequest)
-			return
-		}
-		if sender == config.GithubBotLogin {
-			slog.Info("Webhook originates from this platform")
-			return
-		}
-
 		if r.Header.Get("X-GitHub-Event") != "pull_request" {
 			slog.Error("Not a pull request")
 			return
@@ -105,6 +94,11 @@ func whHandler(taskChannel chan types.Task) http.HandlerFunc {
 		err = pr.UnmarshalpullRequest(body)
 		if err != nil {
 			slog.Error("Failed to unmsarhsal the pull request", "error", err)
+			return
+		}
+
+		if pr.HeadSHA == pushedCommits[pr.Number] {
+			slog.Info("Webhook originates from this platform")
 			return
 		}
 
@@ -181,7 +175,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 		return fmt.Errorf("Failed to marshal the message package: %w", err)
 	}
 	msgReader := bytes.NewReader(msgBytes)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, config.AIEnginePort, msgReader)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf(":%s", config.AIEnginePort), msgReader)
 	if err != nil {
 		return fmt.Errorf("Failed to create http request: %w", err)
 	}
@@ -206,11 +200,11 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 }
 
 // Starts the http server.
-func StartServer(ctx context.Context, taskChannel chan types.Task) (err error) {
+func StartServer(ctx context.Context, taskChannel chan types.Task, pushedCommits map[int]string) (err error) {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(taskChannel)))
+	mux.Handle("/", http.HandlerFunc(whHandler(taskChannel, pushedCommits)))
 	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(taskChannel)))
 
 	port := fmt.Sprintf(":%s", config.Port)

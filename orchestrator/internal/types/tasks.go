@@ -19,6 +19,7 @@ type AIEngineResponse struct {
 	Wfid        int
 	PullRequest PullRequest
 	Done        bool
+
 	// Tests are included if the workflow needs to continue.
 	// Summary is included only if the workflow is complete.
 	Tests   []byte

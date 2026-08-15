@@ -10,15 +10,15 @@ import (
 	"github.com/moby/moby/client"
 )
 
-type WorkflowObject struct {
-	workflow *Workflow
-	cancel   context.CancelFunc
-}
-
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
 	workflows map[int]WorkflowObject
 	mutex     sync.RWMutex
+}
+
+type WorkflowObject struct {
+	workflow *Workflow
+	cancel   context.CancelFunc
 }
 
 // Creates a new workflow manager.
@@ -49,7 +49,7 @@ func (wfm *WorkflowManager) Remove(id int) {
 }
 
 // Starts the run pipeline. Handles incoming workflows.
-func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, taskChannel chan types.Task) {
+func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, taskChannel chan types.Task, pushedCommits map[int]string) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -74,6 +74,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 						JobType: COMMIT_PUSH,
 						Task:    t,
 					}
+					pushedCommits[t.PullRequest.Number] = t.PullRequest.HeadSHA
 				} else {
 					wfo.workflow.Jobs <- Job{
 						JobType: RUN_TESTS,
