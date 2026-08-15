@@ -39,23 +39,6 @@ func seconds(n int) time.Duration {
 	return time.Duration(n) * time.Second
 }
 
-// Gets the user that caused the webhook.
-func getSender(data []byte) (login string, err error) {
-	type temp struct {
-		Sender struct {
-			Login string `json:"login"`
-		} `json:"sender"`
-	}
-
-	var t temp
-	err = json.Unmarshal(data, &t)
-	if err != nil {
-		return "", fmt.Errorf("Failed to unmarshal data: %w", err)
-	}
-	login = t.Sender.Login
-	return login, nil
-}
-
 // Github webhook handler
 func whHandler(taskChannel chan types.Task, pushedCommits map[int]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

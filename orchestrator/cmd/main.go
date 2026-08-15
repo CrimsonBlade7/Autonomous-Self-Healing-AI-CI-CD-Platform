@@ -74,7 +74,6 @@ TODO List:
 	- log storage
 	- handle dead containers
 	- insertTests need file name
-	- inject PAT into CommitPush and UpdateWorkspace
 
 Wishlist
 	- multi-service testing

@@ -10,6 +10,8 @@ import (
 	"github.com/go-git/go-git/v6"
 	gitConfig "github.com/go-git/go-git/v6/config"
 	"github.com/go-git/go-git/v6/plumbing"
+	"github.com/go-git/go-git/v6/plumbing/client"
+	"github.com/go-git/go-git/v6/plumbing/transport/http"
 )
 
 type GithubClient struct{}
@@ -63,8 +65,9 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha
 	}
 
 	err = repo.Push(&git.PushOptions{
-		RemoteName: "origin",
-		RemoteURL:  remote.Config().URLs[0],
+		RemoteName:    "origin",
+		RemoteURL:     remote.Config().URLs[0],
+		ClientOptions: []client.Option{client.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
 		RefSpecs: []gitConfig.RefSpec{
 			gitConfig.RefSpec(gitConfig.RefSpec(fmt.Sprintf("refs/heads/temp-branch:refs/heads/%s", branch))),
 		},
@@ -84,9 +87,10 @@ func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr ty
 	}
 
 	err = repo.FetchContext(ctx, &git.FetchOptions{
-		RemoteURL: config.RepositoryUrl,
-		RefSpecs:  []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
-		Depth:     1,
+		RemoteURL:     config.RepositoryUrl,
+		ClientOptions: []client.Option{client.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
+		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
+		Depth:         1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		// attempt to fetch branch - for when "fetch by sha" is disabled
