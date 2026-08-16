@@ -40,7 +40,7 @@ func seconds(n int) time.Duration {
 }
 
 // Github webhook handler
-func whHandler(taskChannel chan types.Task, pushedCommits map[int]string) http.HandlerFunc {
+func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			closeErr := r.Body.Close()
@@ -80,7 +80,8 @@ func whHandler(taskChannel chan types.Task, pushedCommits map[int]string) http.H
 			return
 		}
 
-		if pr.HeadSHA == pushedCommits[pr.Number] {
+		sha, _ := pc.Get(pr.Number)
+		if pr.HeadSHA == sha {
 			slog.Info("Webhook originates from this platform")
 			return
 		}
@@ -92,7 +93,7 @@ func whHandler(taskChannel chan types.Task, pushedCommits map[int]string) http.H
 }
 
 // Handles responses from the AI Engine and sends response to respChannel.
-func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
+func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			closeErr := r.Body.Close()
@@ -184,11 +185,11 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 }
 
 // Starts the http server.
-func StartServer(ctx context.Context, taskChannel chan types.Task, pushedCommits map[int]string) (err error) {
+func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.PushedCommits) (err error) {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(taskChannel, pushedCommits)))
+	mux.Handle("/", http.HandlerFunc(whHandler(taskChannel, pc)))
 	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(taskChannel)))
 
 	port := fmt.Sprintf(":%s", config.Port)

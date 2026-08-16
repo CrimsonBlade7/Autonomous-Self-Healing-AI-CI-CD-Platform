@@ -15,11 +15,12 @@ import (
 )
 
 func main() {
+	// slogs are currently just printed to stdout
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
 	taskChannel := make(chan types.Task)
-	pushedCommits := make(map[int]string)
+	pcMap := types.NewPushedCommits()
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
@@ -53,9 +54,9 @@ func main() {
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pushedCommits)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pcMap)
 
-	err = servertools.StartServer(mainCtx, taskChannel, pushedCommits)
+	err = servertools.StartServer(mainCtx, taskChannel, pcMap)
 	if err != nil {
 		slog.Error("Server failure", "error", err)
 		return

@@ -10,11 +10,17 @@ import (
 	"github.com/moby/moby/client"
 )
 
+// Wraps an error with a wfid.
+type ErrorObject struct {
+	wfid int
+	err  error
+}
+
 // Manages workflows and assigns jobs.
 type WorkflowManager struct {
 	workflows map[int]WorkflowObject
 	mutex     sync.RWMutex
-	wfErrChan chan error
+	wfErrChan chan ErrorObject
 }
 
 type WorkflowObject struct {
@@ -27,7 +33,7 @@ func NewWorkflowManager() *WorkflowManager {
 	return &WorkflowManager{
 		workflows: make(map[int]WorkflowObject),
 		mutex:     sync.RWMutex{},
-		wfErrChan: make(chan error),
+		wfErrChan: make(chan ErrorObject),
 	}
 }
 
@@ -51,15 +57,19 @@ func (wfm *WorkflowManager) Remove(id int) {
 }
 
 // Starts the run pipeline. Handles incoming workflows.
-func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, taskChannel chan types.Task, pushedCommits map[int]string) {
+func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, taskChannel <-chan types.Task, pc *types.PushedCommits) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
+
+		case errObject := <-wfm.wfErrChan:
+			slog.Error("Workflow failed", "wfid", errObject.wfid, "error", errObject.err)
+			wfm.Remove(errObject.wfid)
+
 		case task := <-taskChannel:
 			switch t := task.(type) {
 			case types.PullRequest:
-				wfm.workflows[t.Number].cancel()
 				err := wfm.handlePullRequest(ctx, cli, t)
 				if err != nil {
 					slog.Error("Failed to handle pull request", "error", err)
@@ -74,13 +84,13 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 
 				if t.Done {
 					wfo.workflow.jobs <- Job{
-						JobType: COMMIT_PUSH,
+						JobType: "commit_push",
 						Task:    t,
 					}
-					pushedCommits[t.PullRequest.Number] = t.PullRequest.HeadSHA
+					pc.Set(t.PullRequest.Number, t.PullRequest.HeadSHA)
 				} else {
 					wfo.workflow.jobs <- Job{
-						JobType: RUN_TESTS,
+						JobType: "run_tests",
 						Task:    t,
 					}
 				}
@@ -114,13 +124,16 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		slog.Info("New workflow started", "wfid", nwf.wfid)
 
 	case "closed":
+		if !exists {
+			panic(fmt.Sprintf("Attempting to close a workflow that does not exist: %v", num))
+		}
 		wfo.cancel()
 		if pr.Merged {
 			wfm.Remove(num)
 			slog.Info("Workflow removed", "wfid", wfo.workflow.wfid)
 		}
 		wf.jobs <- Job{
-			JobType: CLOSE,
+			JobType: "close",
 			Task:    pr,
 		}
 		slog.Info("Workflow stopped", "wfid", wf.wfid)
@@ -134,14 +147,14 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 
 	case "edited":
 		wf.jobs <- Job{
-			JobType: EDIT,
+			JobType: "edit",
 			Task:    pr,
 		}
 		slog.Info("Pull request updated", "wfid", wfo.workflow.wfid)
 
 	case "synchronize":
 		wf.jobs <- Job{
-			JobType: SYNC,
+			JobType: "sync",
 			Task:    pr,
 		}
 		slog.Info("Repository synchronized", "wfid", wfo.workflow.wfid)
@@ -163,7 +176,7 @@ func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr t
 		wf.runWorkflow(subCtx, cli)
 	}()
 	wf.jobs <- Job{
-		JobType: OPEN,
+		JobType: "open",
 		Task:    wf.pullRequest,
 	}
 	return err
