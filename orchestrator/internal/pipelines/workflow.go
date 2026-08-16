@@ -20,17 +20,19 @@ import (
 type Workflow struct {
 	wfid             int // The pr number
 	pullRequest      types.PullRequest
-	Jobs             chan Job
+	jobs             chan Job
 	path             string       // Path to the associated workspace
 	cleanWs          func() error // Removes the workspace at path
 	attemptNum       int
 	currentTestsPath string
+	errorChannel     chan<- error
 }
 
 const (
 	OPEN = iota
 	CLOSE
-	UPDATE_PR
+	EDIT
+	SYNC
 	RUN_TESTS
 	COMMIT_PUSH
 )
@@ -39,7 +41,8 @@ type Job struct {
 	// Can be one of:
 	// - OPEN
 	// - CLOSE
-	// - UPDATE_PR
+	// - EDIT
+	// - SYNC
 	// - RUN_TESTS
 	// - COMMIT_PUSH
 	JobType int
@@ -48,24 +51,25 @@ type Job struct {
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
-func newWorkflow(pr types.PullRequest) (wf *Workflow, err error) {
+func newWorkflow(pr types.PullRequest, errChan chan<- error) (wf *Workflow, err error) {
 	wf = &Workflow{
-		wfid:        pr.Number,
-		pullRequest: pr,
-		Jobs:        make(chan Job),
-		attemptNum:  0,
+		wfid:         pr.Number,
+		pullRequest:  pr,
+		jobs:         make(chan Job),
+		attemptNum:   0,
+		errorChannel: errChan,
 	}
 
 	return wf, nil
 }
 
-// Starts the job pipeline. Handles incoming jobs.
-func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err error) {
+// Starts the job pipeline. Handles incoming jobs. Blocks until an error occurs.
+func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
-		case job := <-wf.Jobs:
+			return
+		case job := <-wf.jobs:
 			switch job.JobType {
 			case OPEN:
 				wf.attemptNum = 0
@@ -73,9 +77,9 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 				if err != nil {
 					cleanerr := clean()
 					if cleanerr != nil {
-						return fmt.Errorf("Failed to cleanup workspace: %w", cleanerr)
+						wf.errorChannel <- fmt.Errorf("Failed to cleanup workspace: %w", cleanerr)
 					}
-					return fmt.Errorf("Failed to create a temporary workspace: %w", err)
+					wf.errorChannel <- fmt.Errorf("Failed to create a temporary workspace: %w", err)
 				}
 				wf.path = path
 				wf.cleanWs = clean
@@ -85,33 +89,40 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 					PullRequest: wf.pullRequest,
 				})
 				if err != nil {
-					return fmt.Errorf("Failed to send request to ai engine: %w", err)
+					wf.errorChannel <- fmt.Errorf("Failed to send request to ai engine: %w", err)
 				}
 
 			case CLOSE:
 				err := wf.cleanWs()
 				if err != nil {
-					return fmt.Errorf("Failed to clean up workspace: %w", err)
+					wf.errorChannel <- fmt.Errorf("Failed to clean up workspace: %w", err)
 				}
 				err = servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid})
 				if err != nil {
-					return fmt.Errorf("Failed to send request to ai engine: %w", err)
+					wf.errorChannel <- fmt.Errorf("Failed to send request to ai engine: %w", err)
 				}
-				return nil
 
-			case UPDATE_PR:
+			case EDIT, SYNC:
 				wf.attemptNum = 0
 				pr, ok := job.Task.(types.PullRequest)
 				if !ok {
-					panic("UPDATE_PR should always come from a pull request.")
+					panic("EDIT or SYNC should always come from a pull request.")
 				}
+
 				wf.pullRequest = pr
-				err := servertools.SendRequestAIEngine(ctx, "update_pr", types.AIEngineRequest{
+
+				var jt string
+				if job.JobType == EDIT {
+					jt = "edit"
+				} else {
+					jt = "sync"
+				}
+				err := servertools.SendRequestAIEngine(ctx, jt, types.AIEngineRequest{
 					Wfid:        wf.wfid,
 					PullRequest: pr,
 				})
 				if err != nil {
-					return fmt.Errorf("Failed to send request to ai engine: %w", err)
+					wf.errorChannel <- fmt.Errorf("Failed to send request to ai engine: %w", err)
 				}
 
 			case RUN_TESTS:
@@ -121,38 +132,34 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 					panic("RUN_TESTS should always come from a pull request.")
 				}
 				if aier.PullRequest != wf.pullRequest {
-					slog.Info("AI Engine Response pull request does not match the current pull request")
+					slog.Info("Outdated response from AI Engine, pull request does not match current version")
 					continue
 				}
 				if wf.attemptNum > config.MAX_TEST_PATCHING_ATTEMPTS {
-					return fmt.Errorf("Test generation failed: too many attempts")
+					wf.errorChannel <- fmt.Errorf("Test generation failed: too many attempts")
 				}
 				wf.attemptNum++
 
-				err := wstools.InsertTests(wf.path, aier.Tests)
+				err := wstools.InsertTests(filepath.Join(wf.path, aier.TestName), aier.Tests)
 				if err != nil {
-					slog.Error("Failed to insert tests", "error", err)
-					continue
+					wf.errorChannel <- fmt.Errorf("Failed to insert tests: %w", err)
 				}
 				nameFormatter := strings.NewReplacer("/", "-", "|", "-", "<", "-", ">", "-", "\"", "-")
 				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullRequest.Branch, wf.wfid))
 				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
 				if err != nil {
-					slog.Error("Failed to build image", "error", err)
-					continue
+					wf.errorChannel <- fmt.Errorf("Failed to build image: %w", err)
 				}
 
 				// Process the container
 				contInspect, logOut, logErr, err := processContainer(ctx, tag, cli)
 				if err != nil {
-					slog.Error("Container failed", "error", err)
-					continue
+					wf.errorChannel <- fmt.Errorf("Container failed: %w", err)
 				}
 
 				err = dockertools.RemoveImage(ctx, cli, tag)
 				if err != nil {
-					slog.Error("Failed to remove image", "error", err)
-					continue
+					wf.errorChannel <- fmt.Errorf("Failed to remove image: %w", err)
 				}
 
 				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
@@ -167,8 +174,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 					ExitCode:  contInspect.ExitCode,
 				})
 				if err != nil {
-					slog.Error("Failed to send request to AI Engine", "error", err)
-					continue
+					wf.errorChannel <- fmt.Errorf("Request to AI Engine failed: %w", err)
 				}
 
 			case COMMIT_PUSH:
@@ -177,10 +183,9 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) (err er
 				if !ok {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
-				err = wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary)
+				err := wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary)
 				if err != nil {
-					slog.Error("Failed to write summary", "error", err)
-					continue
+					wf.errorChannel <- fmt.Errorf("Failed to write summary: %w", err)
 				}
 
 			default:
@@ -233,14 +238,4 @@ func processContainer(ctx context.Context, tag string, cli *client.Client) (insp
 	}
 
 	return inspect, logOutString, logErrString, err
-}
-
-func (wf *Workflow) GetWfid() int {
-	return wf.wfid
-}
-func (wf *Workflow) GetPullRequest() types.PullRequest {
-	return wf.pullRequest
-}
-func (wf *Workflow) GetPath() string {
-	return wf.path
 }

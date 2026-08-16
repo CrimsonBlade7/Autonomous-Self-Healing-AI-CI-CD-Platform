@@ -14,6 +14,7 @@ import (
 type WorkflowManager struct {
 	workflows map[int]WorkflowObject
 	mutex     sync.RWMutex
+	wfErrChan chan error
 }
 
 type WorkflowObject struct {
@@ -26,6 +27,7 @@ func NewWorkflowManager() *WorkflowManager {
 	return &WorkflowManager{
 		workflows: make(map[int]WorkflowObject),
 		mutex:     sync.RWMutex{},
+		wfErrChan: make(chan error),
 	}
 }
 
@@ -69,14 +71,15 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 					slog.Error("Workflow ID does not exist", "ID", t.Wfid)
 					continue
 				}
+
 				if t.Done {
-					wfo.workflow.Jobs <- Job{
+					wfo.workflow.jobs <- Job{
 						JobType: COMMIT_PUSH,
 						Task:    t,
 					}
 					pushedCommits[t.PullRequest.Number] = t.PullRequest.HeadSHA
 				} else {
-					wfo.workflow.Jobs <- Job{
+					wfo.workflow.jobs <- Job{
 						JobType: RUN_TESTS,
 						Task:    t,
 					}
@@ -100,7 +103,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if exists {
 			panic(fmt.Sprintf("Duplicate workflow: %v", num))
 		}
-		nwf, err := newWorkflow(pr)
+		nwf, err := newWorkflow(pr, wfm.wfErrChan)
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
 		}
@@ -108,28 +111,40 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if err != nil {
 			return fmt.Errorf("Failed to open pr: %w", err)
 		}
+		slog.Info("New workflow started", "wfid", nwf.wfid)
 
 	case "closed":
 		wfo.cancel()
 		if pr.Merged {
 			wfm.Remove(num)
+			slog.Info("Workflow removed", "wfid", wfo.workflow.wfid)
 		}
-		wf.Jobs <- Job{
+		wf.jobs <- Job{
 			JobType: CLOSE,
 			Task:    pr,
 		}
+		slog.Info("Workflow stopped", "wfid", wf.wfid)
 
 	case "reopened":
 		err = wfm.openPr(ctx, cli, pr, wf)
 		if err != nil {
 			return fmt.Errorf("Failed to open pr: %w", err)
 		}
+		slog.Info("Workflow repopened", "wfid", wfo.workflow.wfid)
 
-	case "edited", "synchronize":
-		wf.Jobs <- Job{
-			JobType: UPDATE_PR,
+	case "edited":
+		wf.jobs <- Job{
+			JobType: EDIT,
 			Task:    pr,
 		}
+		slog.Info("Pull request updated", "wfid", wfo.workflow.wfid)
+
+	case "synchronize":
+		wf.jobs <- Job{
+			JobType: SYNC,
+			Task:    pr,
+		}
+		slog.Info("Repository synchronized", "wfid", wfo.workflow.wfid)
 
 	default:
 		slog.Info("Unsupported pull request action", "action", pr.Action)
@@ -145,14 +160,9 @@ func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr t
 	})
 	go func() {
 		defer end()
-		defer wfm.Remove(pr.Number)
-		wfErr := wf.runWorkflow(subCtx, cli)
-		if wfErr != nil {
-			end()
-			err = wfErr
-		}
+		wf.runWorkflow(subCtx, cli)
 	}()
-	wf.Jobs <- Job{
+	wf.jobs <- Job{
 		JobType: OPEN,
 		Task:    wf.pullRequest,
 	}

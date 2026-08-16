@@ -132,11 +132,12 @@ func aiEngineResponseHandler(taskChannel chan types.Task) http.HandlerFunc {
 }
 
 // Sends a http request to the AI Engine.
-// jobType can be one of: "open", "close", "logs", "update_pr".
+// jobType can be one of: "open", "close", "logs", "edit", "sync".
 // open: Start a workflow when a pr opens.
 // close: Close and merge implied; end associated workflow and update rag index.
 // logs: Return the logs of the last test run.
-// update_pr: Update pr information.
+// edit: Update pr information.
+// sync: update branch head
 func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) (err error) {
 	validJobTypes := []string{
 		"open",

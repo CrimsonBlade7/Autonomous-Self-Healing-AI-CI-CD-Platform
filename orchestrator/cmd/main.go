@@ -68,12 +68,11 @@ TODO List:
 	- handle receiving prs while workflow is running
 		- if patches for the wrong sha are received, discard them
 	- handle hanging workflows due to errors *
-	- dockerize this project
+	- dockerize this project and add persistance
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?
-	- log storage
+		- log storage
 	- handle dead containers
-	- insertTests need file name
 
 Wishlist
 	- multi-service testing
