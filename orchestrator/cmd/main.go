@@ -66,9 +66,7 @@ func main() {
 /*
 TODO List:
 	- testing *
-	- handle receiving prs while workflow is running
-		- if patches for the wrong sha are received, discard them
-	- handle hanging workflows due to errors *
+	- handle hanging workflows due to errors: currently we just drop the whole workflow with no retry
 	- dockerize this project and add persistance
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?

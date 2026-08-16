@@ -86,8 +86,8 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 			err = closeErr
 		}
 	}()
-	go func() {
-		err := tb.TarWorkspace(pw, srcPath)
+	go func(w *io.PipeWriter, path string) {
+		err := tb.TarWorkspace(w, path)
 		if err != nil {
 			slog.Error("Failed to tar the workspace", "error", err)
 			return
@@ -97,7 +97,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 			slog.Error("Pipe writter failed to close", "error", err)
 			return
 		}
-	}()
+	}(pw, srcPath)
 
 	tag = fmt.Sprintf("%s:%s", wsName, sha)
 

@@ -171,10 +171,10 @@ func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr t
 		workflow: wf,
 		cancel:   end,
 	})
-	go func() {
+	go func(ctx context.Context, cli *client.Client) {
 		defer end()
 		wf.runWorkflow(subCtx, cli)
-	}()
+	}(subCtx, cli)
 	wf.jobs <- Job{
 		JobType: "open",
 		Task:    wf.pullRequest,
