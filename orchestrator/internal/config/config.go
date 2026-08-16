@@ -41,7 +41,7 @@ const (
 */
 
 func loadTestingEnvVars() (err error) {
-	testEnvFile, err := os.Open(GetPath("/orchestrator/internal/config/test-env-vars.txt"))
+	testEnvFile, err := os.Open(GetRelativePath("internal", "config", "test-env-vars.txt"))
 	if err != nil {
 		return fmt.Errorf("Failed to open test env file: %w", err)
 	}
@@ -96,37 +96,47 @@ func loadEnv() (err error) {
 
 // Initializes global variables. Must be called first in main.
 func Init() (err error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return fmt.Errorf("Failed to get executable path: %w", err)
-	}
+	envRoot := os.Getenv("PROJECT_ROOT")
+	if envRoot != "" {
+		RootDir = envRoot
+	} else {
+		exePath, err := os.Executable()
+		if err != nil {
+			return fmt.Errorf("Failed to get executable path: %w", err)
+		}
 
-	exePath, err = filepath.EvalSymlinks(exePath)
-	if err != nil {
-		return fmt.Errorf("Failed to resolve symlinks: %w", err)
-	}
+		exePath, err = filepath.EvalSymlinks(exePath)
+		if err != nil {
+			return fmt.Errorf("Failed to resolve symlinks: %w", err)
+		}
 
-	// Set the global BaseDir to the executable's directory
+		if strings.Contains(exePath, os.TempDir()) {
+            cwd, err := os.Getwd()
+            if err != nil {
+                return fmt.Errorf("Failed to get current working directory: %w", err)
+            }
+            RootDir = cwd
+        } else {
+            RootDir = filepath.Dir(filepath.Dir(exePath))
+        }
 
-	// Warning: only works if the path to main is orchestrator/cmd/main.go
-	// RootDir = ./Autonomous-AI-CI-CD-Platform
-	RootDir = filepath.Dir(filepath.Dir(filepath.Dir(exePath)))
-	WsDir = GetPath("/orchestrator/workspaces")
+		WsDir = GetRelativePath("workspaces")
 
-	err = loadEnv()
-	if err != nil {
-		return fmt.Errorf("Failed to load env variables: %w", err)
-	}
+		err = loadEnv()
+		if err != nil {
+			return fmt.Errorf("Failed to load env variables: %w", err)
+		}
 
-	err = loadTestingEnvVars()
-	if err != nil {
-		return fmt.Errorf("Failed to load test env variables: %w", err)
+		err = loadTestingEnvVars()
+		if err != nil {
+			return fmt.Errorf("Failed to load test env variables: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// GetPath returns the relative path from the root orchestrator (RootDir + relPath)
-func GetPath(relPath string) string {
-	return filepath.Join(RootDir, relPath)
+// GetRelativePath returns the relative path from the root orchestrator (RootDir + relPath)
+func GetRelativePath(relPath ...string) string {
+	return filepath.Join(append([]string{RootDir}, relPath...)...)
 }

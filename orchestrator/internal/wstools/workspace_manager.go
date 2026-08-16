@@ -17,8 +17,8 @@ type GitClient interface {
 }
 
 // Creates a unique temp directory in workspaceDir
-func tempWorkspace(dir, sha string) (path string, cleanup func() error, err error) {
-	path, err = os.MkdirTemp(dir, fmt.Sprintf("sha%s_*", sha))
+func tempWorkspace(sha string) (path string, cleanup func() error, err error) {
+	path, err = os.MkdirTemp(config.WsDir, fmt.Sprintf("sha%s_*", sha))
 	if err != nil {
 		return "", nil, err
 	}
@@ -32,10 +32,10 @@ func tempWorkspace(dir, sha string) (path string, cleanup func() error, err erro
 	return path, cleanup, nil
 }
 
-// Initializes the workspace and clones it into dest (which should be temp_workspaces)
+// Initializes the workspace and clones it into dest (which should be workspaces)
 func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (path string, cleanup func() error, err error) {
 
-	path, cleanup, err = tempWorkspace(config.WsDir, pr.HeadSHA)
+	path, cleanup, err = tempWorkspace(pr.HeadSHA)
 
 	err = cli.InitRepo(ctx, path, pr)
 	if err != nil {
@@ -66,7 +66,7 @@ func ClearWorkspaces() (err error) {
 	}
 
 	// Recreate the empty directory with original permissions
-	if err := os.MkdirAll(config.GetPath(config.WsDir), mode); err != nil {
+	if err := os.MkdirAll(config.WsDir, mode); err != nil {
 		return fmt.Errorf("Failed to recreate dir: %w", err)
 	}
 
@@ -76,7 +76,7 @@ func ClearWorkspaces() (err error) {
 // Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
 // If a test name does not exist, it will be logged, but no errors will be returned.
 func InsertTests(path string, data []byte) (err error) {
-	file, err := os.Create(config.GetPath(path))
+	file, err := os.Create(config.GetRelativePath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
@@ -91,7 +91,7 @@ func InsertTests(path string, data []byte) (err error) {
 
 // Adds a summary file at path containing text.
 func WriteSummary(path, text string) error {
-	file, err := os.Create(config.GetPath(path))
+	file, err := os.Create(config.GetRelativePath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create summary file: %w", err)
 	}
