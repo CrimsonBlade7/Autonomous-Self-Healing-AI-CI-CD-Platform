@@ -25,33 +25,30 @@ type Workflow struct {
 	cleanWs          func() error // Removes the workspace at path
 	attemptNum       int
 	currentTestsPath string
-	errorChannel     chan<- error
-}
+	errorChannel     chan<- ErrorObject
 
-const (
-	OPEN = iota
-	CLOSE
-	EDIT
-	SYNC
-	RUN_TESTS
-	COMMIT_PUSH
-)
+	// Can be one of:
+	// - "running"
+	// - "stopped"
+	// - "closed"
+	status string
+}
 
 type Job struct {
 	// Can be one of:
-	// - OPEN
-	// - CLOSE
-	// - EDIT
-	// - SYNC
-	// - RUN_TESTS
-	// - COMMIT_PUSH
-	JobType int
+	// - "open"
+	// - "close"
+	// - "edit"
+	// - "sync"
+	// - "run_tests"
+	// - "commit_push"
+	JobType string
 	Task    types.Task
 }
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
-func newWorkflow(pr types.PullRequest, errChan chan<- error) (wf *Workflow, err error) {
+func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow, err error) {
 	wf = &Workflow{
 		wfid:         pr.Number,
 		pullRequest:  pr,
@@ -71,15 +68,21 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 			return
 		case job := <-wf.jobs:
 			switch job.JobType {
-			case OPEN:
+			case "open":
 				wf.attemptNum = 0
 				path, clean, err := wstools.InitWorkspace(ctx, wf.pullRequest, &wstools.GithubClient{})
 				if err != nil {
 					cleanerr := clean()
 					if cleanerr != nil {
-						wf.errorChannel <- fmt.Errorf("Failed to cleanup workspace: %w", cleanerr)
+						wf.errorChannel <- ErrorObject{
+							wfid: wf.wfid,
+							err:  fmt.Errorf("Failed to cleanup workspace: %w", cleanerr),
+						}
 					}
-					wf.errorChannel <- fmt.Errorf("Failed to create a temporary workspace: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to create a temporary workspace: %w", err),
+					}
 				}
 				wf.path = path
 				wf.cleanWs = clean
@@ -89,20 +92,29 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					PullRequest: wf.pullRequest,
 				})
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to send request to ai engine: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
+					}
 				}
 
-			case CLOSE:
+			case "close":
 				err := wf.cleanWs()
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to clean up workspace: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to clean up workspace: %w", err),
+					}
 				}
 				err = servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid})
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to send request to ai engine: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
+					}
 				}
 
-			case EDIT, SYNC:
+			case "edit", "sync":
 				wf.attemptNum = 0
 				pr, ok := job.Task.(types.PullRequest)
 				if !ok {
@@ -111,21 +123,26 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 
 				wf.pullRequest = pr
 
+				// May be redundant, but exists just in case the types are relabled.
 				var jt string
-				if job.JobType == EDIT {
+				if job.JobType == "edit" {
 					jt = "edit"
 				} else {
 					jt = "sync"
 				}
+
 				err := servertools.SendRequestAIEngine(ctx, jt, types.AIEngineRequest{
 					Wfid:        wf.wfid,
 					PullRequest: pr,
 				})
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to send request to ai engine: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
+					}
 				}
 
-			case RUN_TESTS:
+			case "run_tests":
 				// TODO: block tests from the wrong sha
 				aier, ok := job.Task.(types.AIEngineResponse)
 				if !ok {
@@ -136,30 +153,45 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					continue
 				}
 				if wf.attemptNum > config.MAX_TEST_PATCHING_ATTEMPTS {
-					wf.errorChannel <- fmt.Errorf("Test generation failed: too many attempts")
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Test generation failed: too many attempts"),
+					}
 				}
 				wf.attemptNum++
 
 				err := wstools.InsertTests(filepath.Join(wf.path, aier.TestName), aier.Tests)
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to insert tests: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to insert tests: %w", err),
+					}
 				}
 				nameFormatter := strings.NewReplacer("/", "-", "|", "-", "<", "-", ">", "-", "\"", "-")
 				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullRequest.Branch, wf.wfid))
 				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to build image: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to build image: %w", err),
+					}
 				}
 
 				// Process the container
 				contInspect, logOut, logErr, err := processContainer(ctx, tag, cli)
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Container failed: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Container failed: %w", err),
+					}
 				}
 
 				err = dockertools.RemoveImage(ctx, cli, tag)
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to remove image: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to remove image: %w", err),
+					}
 				}
 
 				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
@@ -174,10 +206,13 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					ExitCode:  contInspect.ExitCode,
 				})
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Request to AI Engine failed: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Request to AI Engine failed: %w", err),
+					}
 				}
 
-			case COMMIT_PUSH:
+			case "commit_push":
 				// TODO: implement commit push
 				aier, ok := job.Task.(types.AIEngineResponse)
 				if !ok {
@@ -185,7 +220,10 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				}
 				err := wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary)
 				if err != nil {
-					wf.errorChannel <- fmt.Errorf("Failed to write summary: %w", err)
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to write summary: %w", err),
+					}
 				}
 
 			default:
