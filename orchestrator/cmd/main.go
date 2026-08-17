@@ -72,8 +72,7 @@ TODO List:
 		- also maybe for saving workflows?
 		- log storage
 	- handle dead containers
-	- fix filepaths
-		- the test env var txt file will not get compiled
+	- one line errors
 
 Wishlist
 	- multi-service testing
