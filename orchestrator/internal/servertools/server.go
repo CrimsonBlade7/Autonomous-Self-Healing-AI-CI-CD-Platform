@@ -152,7 +152,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 	}
 
 	cli := http.Client{
-		Timeout: seconds(config.AI_ENGINE_REQUEST_TIMEOUT),
+		Timeout: seconds(config.AiEngineRequestTimeout),
 	}
 
 	msgBytes, err := json.Marshal(req)
@@ -195,9 +195,9 @@ func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.P
 	port := fmt.Sprintf(":%s", config.Port)
 	server := &http.Server{
 		Addr:              port,
-		Handler:           mux,                                 // Inject your isolated router
-		ReadHeaderTimeout: seconds(config.READ_HEADER_TIMEOUT), // Max time to read just the headers
-		WriteTimeout:      seconds(config.WRITE_TIMEOUT),       // Max time to write the response
+		Handler:           mux,                               // Inject your isolated router
+		ReadHeaderTimeout: seconds(config.ReadHeaderTimeout), // Max time to read just the headers
+		WriteTimeout:      seconds(config.WriteTimeout),      // Max time to write the response
 	}
 
 	// create a context for server lifetime
@@ -218,7 +218,7 @@ func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.P
 	<-lifetime.Done()
 
 	// create a context for duration of the server shutdown
-	countdown := time.Duration(config.SERVER_SHUTDOWN_TIMEOUT) * time.Second
+	countdown := time.Duration(config.ServerShutdownTimeout) * time.Second
 	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, countdown)
 	defer cancelShutdown()
 

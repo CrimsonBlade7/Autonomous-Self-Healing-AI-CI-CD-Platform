@@ -152,7 +152,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					slog.Info("Outdated response from AI Engine, pull request does not match current version")
 					continue
 				}
-				if wf.attemptNum > config.MAX_TEST_PATCHING_ATTEMPTS {
+				if wf.attemptNum > config.MaxTestPatchingAttempts {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Test generation failed: too many attempts"),
@@ -235,7 +235,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 
 // Creates a container, runs it, and removes it. Returns a ContainerInspection, stdout, stderr, and an error.
 func processContainer(ctx context.Context, tag string, cli *client.Client) (inspect dockertools.ContainerInspection, logOutString string, logErrString string, err error) {
-	subContext, cancel := context.WithTimeout(ctx, time.Duration(config.CONTAINER_TIMEOUT)*time.Minute)
+	subContext, cancel := context.WithTimeout(ctx, time.Duration(config.ContainerTimeout)*time.Minute)
 	defer cancel()
 	contID, logOut, logErr, err := dockertools.RunContainer(subContext, cli, tag)
 	if err != nil {

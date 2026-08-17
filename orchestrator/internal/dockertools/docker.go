@@ -154,7 +154,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 		},
 		HostConfig: &container.HostConfig{
 			Resources: container.Resources{
-				Memory: int64(config.CONTAINER_MEMORY_CAP * config.MB),
+				Memory: int64(config.ContainerMemoryCap * config.MB),
 			},
 		},
 		Name:  tag,

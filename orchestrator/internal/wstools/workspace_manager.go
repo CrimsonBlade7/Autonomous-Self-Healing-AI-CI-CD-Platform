@@ -76,7 +76,7 @@ func ClearWorkspaces() (err error) {
 // Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
 // If a test name does not exist, it will be logged, but no errors will be returned.
 func InsertTests(path string, data []byte) (err error) {
-	file, err := os.Create(config.GetRelativePath(path))
+	file, err := os.Create(config.RelToAbsPath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
@@ -91,7 +91,7 @@ func InsertTests(path string, data []byte) (err error) {
 
 // Adds a summary file at path containing text.
 func WriteSummary(path, text string) error {
-	file, err := os.Create(config.GetRelativePath(path))
+	file, err := os.Create(config.RelToAbsPath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create summary file: %w", err)
 	}
