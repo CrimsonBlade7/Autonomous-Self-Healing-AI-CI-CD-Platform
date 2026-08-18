@@ -74,14 +74,12 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 		}
 
 		var pr types.PullRequest
-		err = pr.UnmarshalpullRequest(body)
-		if err != nil {
+		if err := pr.UnmarshalpullRequest(body); err != nil {
 			slog.Error("Failed to unmsarhsal the pull request", "error", err)
 			return
 		}
 
-		sha, _ := pc.Get(pr.Number)
-		if pr.HeadSHA == sha {
+		if sha, _ := pc.Get(pr.Number); pr.HeadSHA == sha {
 			slog.Info("Webhook originates from this platform")
 			return
 		}
@@ -96,8 +94,7 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			closeErr := r.Body.Close()
-			if closeErr != nil {
+			if closeErr := r.Body.Close(); closeErr != nil {
 				slog.Error("Failed to close request body", "error", closeErr)
 			}
 		}()
@@ -121,8 +118,7 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 		}
 
 		var resp types.AIEngineResponse
-		err = json.Unmarshal(body, &resp)
-		if err != nil {
+		if err := json.Unmarshal(body, &resp); err != nil {
 			w.WriteHeader(http.StatusUnsupportedMediaType)
 			slog.Error("Could not unmarshal the data into a type.Response", "error", err)
 			return
@@ -173,8 +169,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 		return fmt.Errorf("Failed to send http request: %w", err)
 	}
 	defer func() {
-		closeErr := resp.Body.Close()
-		if closeErr != nil {
+		if closeErr := resp.Body.Close(); closeErr != nil {
 			err = closeErr
 		}
 	}()
@@ -207,8 +202,7 @@ func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.P
 	// start the server
 	go func() {
 		slog.Info("Server is starting", "port", server.Addr)
-		err := server.ListenAndServe()
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("Server error", "error", err)
 			os.Exit(1)
 		}
@@ -223,8 +217,7 @@ func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.P
 	defer cancelShutdown()
 
 	// shutting down the server
-	err = server.Shutdown(shutdownCtx)
-	if err != nil {
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("Server forced to shutdown", "error", err)
 		return err
 	}

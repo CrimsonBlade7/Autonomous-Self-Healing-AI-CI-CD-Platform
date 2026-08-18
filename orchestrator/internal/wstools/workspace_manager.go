@@ -23,8 +23,7 @@ func tempWorkspace(sha string) (path string, cleanup func() error, err error) {
 		return "", nil, err
 	}
 	cleanup = func() error {
-		cleanupErr := os.RemoveAll(path)
-		if cleanupErr != nil {
+		if cleanupErr := os.RemoveAll(path); cleanupErr != nil {
 			return fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
 		}
 		return nil
@@ -37,8 +36,7 @@ func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (pa
 
 	path, cleanup, err = tempWorkspace(pr.HeadSHA)
 
-	err = cli.InitRepo(ctx, path, pr)
-	if err != nil {
+	if err := cli.InitRepo(ctx, path, pr); err != nil {
 		cleanerr := cleanup()
 		if cleanerr != nil {
 			return "", nil, fmt.Errorf("Failed to clean up workspace: %w", cleanerr)
@@ -81,8 +79,7 @@ func InsertTests(path string, data []byte) (err error) {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
 
-	_, err = file.Write(data)
-	if err != nil {
+	if _, err := file.Write(data); err != nil {
 		return fmt.Errorf("Failed to write tests: %w", err)
 	}
 
@@ -96,8 +93,7 @@ func WriteSummary(path, text string) error {
 		return fmt.Errorf("Failed to create summary file: %w", err)
 	}
 
-	_, err = file.Write([]byte(text))
-	if err != nil {
+	if _, err := file.Write([]byte(text)); err != nil {
 		return fmt.Errorf("Failed to write summary: %w", err)
 	}
 

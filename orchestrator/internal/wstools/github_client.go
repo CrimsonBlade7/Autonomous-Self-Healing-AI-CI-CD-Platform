@@ -23,16 +23,14 @@ func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullR
 		return fmt.Errorf("Failed to initialize repo %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 	}
 
-	_, err = repo.CreateRemote(&gitConfig.RemoteConfig{
+	if _, err = repo.CreateRemote(&gitConfig.RemoteConfig{
 		Name: "origin",
 		URLs: []string{config.RepositoryUrl},
-	})
-	if err != nil {
+	}); err != nil {
 		return fmt.Errorf("Failed to create remote %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 	}
 
-	err = c.UpdateWorkspace(ctx, path, pr)
-	if err != nil {
+	if err := c.UpdateWorkspace(ctx, path, pr); err != nil {
 		return fmt.Errorf("Failed to update the workspace: %w", err)
 	}
 
@@ -51,8 +49,7 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha
 		return "", fmt.Errorf("Failed to checkout the sha: %w", err)
 	}
 
-	err = wt.AddWithOptions(&git.AddOptions{All: true})
-	if err != nil {
+	if err := wt.AddWithOptions(&git.AddOptions{All: true}); err != nil {
 		return "", fmt.Errorf("Failed to add changes: %w", err)
 	}
 
@@ -64,7 +61,7 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha
 		return "", fmt.Errorf("Failed to get remote: %w", err)
 	}
 
-	err = repo.Push(&git.PushOptions{
+	if err := repo.Push(&git.PushOptions{
 		RemoteName:    "origin",
 		RemoteURL:     remote.Config().URLs[0],
 		ClientOptions: []client.Option{client.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
@@ -72,8 +69,7 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha
 			gitConfig.RefSpec(gitConfig.RefSpec(fmt.Sprintf("refs/heads/temp-branch:refs/heads/%s", branch))),
 		},
 		Force: true,
-	})
-	if err != nil {
+	}); err != nil {
 		return "", fmt.Errorf("Failed to push changes: %w", err)
 	}
 	return newSha, nil
@@ -86,25 +82,23 @@ func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr ty
 		return fmt.Errorf("Failed to open the repository at %s: %w", wsPath, err)
 	}
 
-	err = repo.FetchContext(ctx, &git.FetchOptions{
+	if err := repo.FetchContext(ctx, &git.FetchOptions{
 		RemoteURL:     config.RepositoryUrl,
 		ClientOptions: []client.Option{client.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
 		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("%s:%s", pr.HeadSHA, "refs/heads/temp-branch"))},
 		Depth:         1,
-	})
-	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
+	}); err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		// attempt to fetch branch - for when "fetch by sha" is disabled
-		err = repo.FetchContext(ctx, &git.FetchOptions{
+
+		if err := repo.FetchContext(ctx, &git.FetchOptions{
 			RemoteURL: config.RepositoryUrl,
 			RefSpecs:  []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/temp-branch", pr.Branch))},
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("Failed to fetch commit %s at %s: %w", config.RepositoryUrl, pr.HeadSHA, err)
 		}
 	}
 
-	_, err = checkoutSHA(repo, pr.HeadSHA)
-	if err != nil {
+	if _, err = checkoutSHA(repo, pr.HeadSHA); err != nil {
 		return fmt.Errorf("Failed to checkout the sha: %w", err)
 	}
 	return nil
@@ -120,11 +114,11 @@ func checkoutSHA(repo *git.Repository, sha string) (wt *git.Worktree, err error)
 	if !ok {
 		return nil, fmt.Errorf("Failed to hash the sha: %w", err)
 	}
-	err = wt.Checkout(&git.CheckoutOptions{
+
+	if err = wt.Checkout(&git.CheckoutOptions{
 		Hash:  hash,
 		Force: true,
-	})
-	if err != nil {
+	}); err != nil {
 		return nil, fmt.Errorf("Failed to checkout: %w", err)
 	}
 	return wt, nil

@@ -59,8 +59,7 @@ func (pr *PullRequest) UnmarshalpullRequest(data []byte) (err error) {
 		} `json:"pull_request"`
 	}
 
-	err = json.Unmarshal(data, &temp)
-	if err != nil {
+	if err := json.Unmarshal(data, &temp); err != nil {
 		return fmt.Errorf("Failed to unmarshal json data: %w", err)
 	}
 

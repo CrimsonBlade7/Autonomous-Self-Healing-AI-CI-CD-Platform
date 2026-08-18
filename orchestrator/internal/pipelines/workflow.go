@@ -72,8 +72,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				wf.attemptNum = 0
 				path, clean, err := wstools.InitWorkspace(ctx, wf.pullRequest, &wstools.GithubClient{})
 				if err != nil {
-					cleanerr := clean()
-					if cleanerr != nil {
+					if cleanerr := clean(); cleanerr != nil {
 						wf.errorChannel <- ErrorObject{
 							wfid: wf.wfid,
 							err:  fmt.Errorf("Failed to cleanup workspace: %w", cleanerr),
@@ -87,11 +86,10 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				wf.path = path
 				wf.cleanWs = clean
 
-				err = servertools.SendRequestAIEngine(ctx, "open", types.AIEngineRequest{
+				if err = servertools.SendRequestAIEngine(ctx, "open", types.AIEngineRequest{
 					Wfid:        wf.wfid,
 					PullRequest: wf.pullRequest,
-				})
-				if err != nil {
+				}); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
@@ -99,15 +97,13 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				}
 
 			case "close":
-				err := wf.cleanWs()
-				if err != nil {
+				if err := wf.cleanWs(); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to clean up workspace: %w", err),
 					}
 				}
-				err = servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid})
-				if err != nil {
+				if err := servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid}); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
@@ -131,11 +127,10 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					jt = "sync"
 				}
 
-				err := servertools.SendRequestAIEngine(ctx, jt, types.AIEngineRequest{
+				if err := servertools.SendRequestAIEngine(ctx, jt, types.AIEngineRequest{
 					Wfid:        wf.wfid,
 					PullRequest: pr,
-				})
-				if err != nil {
+				}); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
@@ -160,8 +155,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				}
 				wf.attemptNum++
 
-				err := wstools.InsertTests(filepath.Join(wf.path, aier.TestName), aier.Tests)
-				if err != nil {
+				if err := wstools.InsertTests(filepath.Join(wf.path, aier.TestName), aier.Tests); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to insert tests: %w", err),
@@ -186,15 +180,14 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					}
 				}
 
-				err = dockertools.RemoveImage(ctx, cli, tag)
-				if err != nil {
+				if err := dockertools.RemoveImage(ctx, cli, tag); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to remove image: %w", err),
 					}
 				}
 
-				err = servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
+				if err := servertools.SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{
 					Wfid:      wf.wfid,
 					Stdout:    logOut,
 					Stderr:    logErr,
@@ -204,8 +197,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					Status:    contInspect.Status,
 					OOMKilled: contInspect.OOMKilled,
 					ExitCode:  contInspect.ExitCode,
-				})
-				if err != nil {
+				}); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Request to AI Engine failed: %w", err),
@@ -218,8 +210,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				if !ok {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
-				err := wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary)
-				if err != nil {
+				if err := wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to write summary: %w", err),
@@ -245,16 +236,13 @@ func processContainer(ctx context.Context, tag string, cli *client.Client) (insp
 	// Close the logs and remove container
 	// err is updated before this IIFE returns
 	defer func() {
-		err = logOut.Close()
-		if err != nil {
+		if err := logOut.Close(); err != nil {
 			err = fmt.Errorf("Failed to close out logs: %w", err)
 		}
-		err = logErr.Close()
-		if err != nil {
+		if err := logErr.Close(); err != nil {
 			err = fmt.Errorf("Failed to close error logs: %w", err)
 		}
-		err = dockertools.RemoveContainer(ctx, cli, contID)
-		if err != nil {
+		if err := dockertools.RemoveContainer(ctx, cli, contID); err != nil {
 			err = fmt.Errorf("Failed to remove container: %w", err)
 		}
 	}()

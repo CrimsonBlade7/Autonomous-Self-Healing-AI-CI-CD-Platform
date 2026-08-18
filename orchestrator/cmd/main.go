@@ -24,8 +24,7 @@ func main() {
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
-	err := config.Init()
-	if err != nil {
+	if err := config.Init(); err != nil {
 		slog.Error("Failed to initialize global variables", "error", err)
 		return
 	}
@@ -36,28 +35,24 @@ func main() {
 		return
 	}
 	defer func() {
-		err = cli.Close()
-		if err != nil {
+		if err := cli.Close(); err != nil {
 			slog.Error("Failed to close the docker client", "error", err)
 		}
 	}()
 
-	err = dockertools.ClearOldImages(mainCtx, cli)
-	if err != nil {
+	if err := dockertools.ClearOldImages(mainCtx, cli); err != nil {
 		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
-	err = dockertools.ClearOldContainers(mainCtx, cli)
-	if err != nil {
+	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
 		slog.Error("Failed to clean old containers", "error", err)
 		return
 	}
 
 	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pcMap)
 
-	err = servertools.StartServer(mainCtx, taskChannel, pcMap)
-	if err != nil {
+	if err := servertools.StartServer(mainCtx, taskChannel, pcMap); err != nil {
 		slog.Error("Server failure", "error", err)
 		return
 	}

@@ -53,8 +53,7 @@ func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
 	}
 	for _, item := range images.Items {
-		_, err = im.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{})
-		if err != nil {
+		if _, err := im.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{}); err != nil {
 			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
 	}
@@ -68,8 +67,7 @@ func ClearOldContainers(ctx context.Context, cm ContainerManager) (err error) {
 		return fmt.Errorf("Failed to fetch container list: %w", err)
 	}
 	for _, item := range conts.Items {
-		_, err = cm.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{})
-		if err != nil {
+		if _, err := cm.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{}); err != nil {
 			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
 	}
@@ -81,19 +79,16 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 
 	pr, pw := io.Pipe()
 	defer func() {
-		closeErr := pr.Close()
-		if closeErr != nil {
+		if closeErr := pr.Close(); closeErr != nil {
 			err = closeErr
 		}
 	}()
 	go func(w *io.PipeWriter, path string) {
-		err := tb.TarWorkspace(w, path)
-		if err != nil {
+		if err := tb.TarWorkspace(w, path); err != nil {
 			slog.Error("Failed to tar the workspace", "error", err)
 			return
 		}
-		err = pw.CloseWithError(err)
-		if err != nil {
+		if err := pw.CloseWithError(err); err != nil {
 			slog.Error("Pipe writter failed to close", "error", err)
 			return
 		}
@@ -109,8 +104,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 		return "", fmt.Errorf("Failed to build image: %w", err)
 	}
 	defer func() {
-		closeErr := imageResult.Body.Close()
-		if closeErr != nil {
+		if closeErr := imageResult.Body.Close(); closeErr != nil {
 			err = closeErr
 		}
 	}()
@@ -127,8 +121,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	if err != nil {
 		return "", fmt.Errorf("Failed to read image build result: %w", err)
 	}
-	err = json.Unmarshal(buf, &t)
-	if err != nil {
+	if err := json.Unmarshal(buf, &t); err != nil {
 		return "", fmt.Errorf("Failed to unmarshal image build result: %w", err)
 	}
 
@@ -145,7 +138,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 }
 
 // Builds and runs a container labeled with tag. Returns the id, stdout, stderr, and an error.
-// The caller is responsible for closing the logs.
+// The caller is responsible for closing the logs and removing the container.
 func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id string, outReader io.ReadCloser, errReader io.ReadCloser, err error) {
 
 	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
@@ -163,15 +156,6 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to create container %s: %w", tag, err)
 	}
-	defer func() {
-		_, err = cm.ContainerRemove(ctx, cont.ID, client.ContainerRemoveOptions{
-			RemoveVolumes: true,
-		})
-		if err != nil {
-			slog.Error("Failed to remove container", "error", err)
-			return
-		}
-	}()
 
 	id = cont.ID
 
@@ -183,8 +167,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 		return "", nil, nil, fmt.Errorf("Failed to create a container logger: %w", err)
 	}
 
-	_, err = cm.ContainerStart(ctx, id, client.ContainerStartOptions{})
-	if err != nil {
+	if _, err := cm.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to start container: %w", err)
 	}
 
@@ -192,7 +175,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 	select {
 	case <-response.Result:
 		slog.Info("Container completed")
-	case err = <-response.Error:
+	case err := <-response.Error:
 		slog.Error("Container error", "error", err)
 	}
 
@@ -201,8 +184,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 	defer func() {
 		outWriterErr := outWriter.Close()
 		errWriterErr := errWriter.Close()
-		closeErr := errors.Join(outWriterErr, errWriterErr)
-		if closeErr != nil {
+		if closeErr := errors.Join(outWriterErr, errWriterErr); closeErr != nil {
 			err = closeErr
 		}
 	}()
@@ -243,8 +225,9 @@ func RemoveContainer(ctx context.Context, cm ContainerManager, id string) (err e
 	if err != nil {
 		return fmt.Errorf("Failed to inspect container %s: %w", id, err)
 	}
-	_, err = cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{})
-	if err != nil {
+
+	// Removes volumes for now
+	if _, err := cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{RemoveVolumes: true}); err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
 	return nil
@@ -252,8 +235,7 @@ func RemoveContainer(ctx context.Context, cm ContainerManager, id string) (err e
 
 // Removes the specified image.
 func RemoveImage(ctx context.Context, im ImageManager, tag string) (err error) {
-	_, err = im.ImageRemove(ctx, tag, client.ImageRemoveOptions{})
-	if err != nil {
+	if _, err := im.ImageRemove(ctx, tag, client.ImageRemoveOptions{}); err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
 	return nil

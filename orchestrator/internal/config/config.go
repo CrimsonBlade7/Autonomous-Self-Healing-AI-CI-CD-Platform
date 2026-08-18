@@ -11,23 +11,25 @@ import (
 	"github.com/joho/godotenv"
 )
 
-var RootDir string
-var Port string = "8080"
-var WsDir string
-var GithubToken string
-var RepositoryUrl string
-var GithubSecret string
-var AIEngineSecret string
-var AIEnginePort string = "8000"
-var TestingEnvSlice []string
+var (
+	WsDir string
 
-var AiEngineRequestTimeout int = 5
-var ServerShutdownTimeout int = 30
-var ReadHeaderTimeout int = 2
-var WriteTimeout int = 5
-var MaxTestPatchingAttempts int = 10
-var ContainerTimeout int = 10       // in minutes
-var ContainerMemoryCap int = 2 * GB // in bytes
+	RootDir                 string
+	Port                    string = "8080"
+	GithubToken             string
+	RepositoryUrl           string
+	GithubSecret            string
+	AIEngineSecret          string
+	AIEnginePort            string = "8000"
+	TestingEnvSlice         []string
+	AiEngineRequestTimeout  int = 5
+	ServerShutdownTimeout   int = 30
+	ReadHeaderTimeout       int = 2
+	WriteTimeout            int = 5
+	MaxTestPatchingAttempts int = 10
+	ContainerTimeout        int = 10     // in minutes
+	ContainerMemoryCap      int = 2 * GB // in bytes
+)
 
 const (
 	BYTE int = 1
@@ -181,6 +183,12 @@ func validateConfig() error {
 	}
 	if RepositoryUrl == "" {
 		missing = append(missing, "GITHUB_REPOSITORY_URL")
+	}
+	if GithubSecret == "" {
+		missing = append(missing, "GITHUB_WEBHOOK_SECRET")
+	}
+	if AIEngineSecret == "" {
+		missing = append(missing, "AI_ENGINE_SECRET	")
 	}
 
 	if len(missing) > 0 {

@@ -70,8 +70,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 		case task := <-taskChannel:
 			switch t := task.(type) {
 			case types.PullRequest:
-				err := wfm.handlePullRequest(ctx, cli, t)
-				if err != nil {
+				if err := wfm.handlePullRequest(ctx, cli, t); err != nil {
 					slog.Error("Failed to handle pull request", "error", err)
 				}
 
@@ -117,10 +116,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
 		}
-		err = wfm.openPr(ctx, cli, pr, nwf)
-		if err != nil {
-			return fmt.Errorf("Failed to open pr: %w", err)
-		}
+		wfm.openPr(ctx, cli, pr, nwf)
 		slog.Info("New workflow started", "wfid", nwf.wfid)
 
 	case "closed":
@@ -139,10 +135,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		slog.Info("Workflow stopped", "wfid", wf.wfid)
 
 	case "reopened":
-		err = wfm.openPr(ctx, cli, pr, wf)
-		if err != nil {
-			return fmt.Errorf("Failed to open pr: %w", err)
-		}
+		wfm.openPr(ctx, cli, pr, wf)
 		slog.Info("Workflow repopened", "wfid", wfo.workflow.wfid)
 
 	case "edited":
@@ -165,7 +158,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 	return nil
 }
 
-func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr types.PullRequest, wf *Workflow) (err error) {
+func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr types.PullRequest, wf *Workflow) {
 	subCtx, end := context.WithCancel(ctx)
 	wfm.Set(pr.Number, WorkflowObject{
 		workflow: wf,
@@ -179,5 +172,4 @@ func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr t
 		JobType: "open",
 		Task:    wf.pullRequest,
 	}
-	return err
 }
