@@ -27,7 +27,7 @@ type AIEngineResponse struct {
 	Summary  string
 }
 
-func (aier AIEngineResponse) TaskType()
+func (aier AIEngineResponse) TaskType() {}
 
 type PullRequest struct {
 	Number  int    `json:"number"`
@@ -75,4 +75,4 @@ func (pr *PullRequest) UnmarshalpullRequest(data []byte) (err error) {
 	return nil
 }
 
-func (pr PullRequest) TaskType()
+func (pr PullRequest) TaskType() {}

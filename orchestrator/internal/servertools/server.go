@@ -139,8 +139,9 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 	validJobTypes := []string{
 		"open",
 		"close",
+		"edit",
+		"sync",
 		"logs",
-		"update_pr",
 	}
 
 	if !slices.Contains(validJobTypes, jobType) {

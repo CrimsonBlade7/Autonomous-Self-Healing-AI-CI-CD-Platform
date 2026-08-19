@@ -10,7 +10,8 @@ import (
 
 type RealTarBuilder struct{}
 
-func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) (err error) {
+// Tars a workspace at src and streams it to pw.
+func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, src string) (err error) {
 	tw := tar.NewWriter(pw)
 	defer func() {
 		if closeErr := tw.Close(); closeErr != nil {
@@ -18,13 +19,13 @@ func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) (err erro
 		}
 	}()
 
-	err = filepath.WalkDir(path, func(path string, d os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(src, func(path string, d os.DirEntry, walkErr error) (tarErr error) {
 		if walkErr != nil {
 			return fmt.Errorf("Error while walking directory: %w", walkErr)
 		}
-		relPath, err := filepath.Rel(path, path)
-		if err != nil {
-			return fmt.Errorf("Failed create relative path %s/%s: %w", path, path, err)
+		relPath, tarErr := filepath.Rel(src, path)
+		if tarErr != nil {
+			return fmt.Errorf("Failed create relative path %s/%s: %w", src, path, tarErr)
 		}
 
 		// Skip root
@@ -32,37 +33,38 @@ func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) (err erro
 			return nil
 		}
 
-		fi, err := d.Info()
-		if err != nil {
-			return fmt.Errorf("Failed to get info for %s: %w", path, err)
+		fi, tarErr := d.Info()
+		if tarErr != nil {
+			return fmt.Errorf("Failed to get info for %s: %w", relPath, tarErr)
 		}
 
-		header, err := tar.FileInfoHeader(fi, d.Name())
-		if err != nil {
-			return fmt.Errorf("Failed to create file info header: %w", err)
+		header, tarErr := tar.FileInfoHeader(fi, d.Name())
+		if tarErr != nil {
+			return fmt.Errorf("Failed to create file info header: %w", tarErr)
 		}
 		header.Name = filepath.ToSlash(relPath)
 
-		if err = tw.WriteHeader(header); err != nil {
-			return fmt.Errorf("Failed to write header: %w", err)
+		if tarErr = tw.WriteHeader(header); tarErr != nil {
+			return fmt.Errorf("Failed to write header: %w", tarErr)
 		}
 
 		if d.Type().IsRegular() {
-			file, err := os.Open(path)
-			if err != nil {
-				return fmt.Errorf("Failed to open file %s: %w", path, err)
+			var file *os.File
+			file, tarErr = os.Open(path)
+			if tarErr != nil {
+				return fmt.Errorf("Failed to open file %s: %w", relPath, tarErr)
 			}
 			defer func() {
 				if closeErr := file.Close(); closeErr != nil {
-					err = closeErr
+					tarErr = closeErr
 				}
 			}()
-			if _, err = io.Copy(tw, file); err != nil {
-				return fmt.Errorf("Failed to write file contents to tar writer: %w", err)
+			if _, tarErr = io.Copy(tw, file); tarErr != nil {
+				return fmt.Errorf("Failed to write file contents to tar writer: %w", tarErr)
 			}
 		}
 
-		return err
+		return tarErr
 	})
 	return err
 }

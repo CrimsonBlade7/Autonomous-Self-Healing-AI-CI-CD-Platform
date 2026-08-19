@@ -67,6 +67,7 @@ TODO List:
 		- also maybe for saving workflows?
 		- log storage
 	- handle dead containers
+	- left off at claude bug #7
 
 Wishlist
 	- multi-service testing

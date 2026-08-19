@@ -35,6 +35,9 @@ func tempWorkspace(sha string) (path string, cleanup func() error, err error) {
 func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (path string, cleanup func() error, err error) {
 
 	path, cleanup, err = tempWorkspace(pr.HeadSHA)
+	if err != nil {
+		return "", nil, fmt.Errorf("Failed to create a temporary workspace: %w", err)
+	}
 
 	if err := cli.InitRepo(ctx, path, pr); err != nil {
 		cleanerr := cleanup()
