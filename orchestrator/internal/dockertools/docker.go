@@ -84,11 +84,11 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 		}
 	}()
 	go func(w *io.PipeWriter, path string) {
-		if err := tb.TarWorkspace(w, path); err != nil {
-			slog.Error("Failed to tar the workspace", "error", err)
-			return
+		tarErr := tb.TarWorkspace(w, path)
+		if tarErr != nil {
+			slog.Error("Failed to tar the workspace", "error", tarErr)
 		}
-		if err := pw.CloseWithError(err); err != nil {
+		if err := w.CloseWithError(tarErr); err != nil {
 			slog.Error("Pipe writter failed to close", "error", err)
 			return
 		}
@@ -181,14 +181,12 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 
 	outReader, outWriter := io.Pipe()
 	errReader, errWriter := io.Pipe()
-	defer func() {
-		outWriterErr := outWriter.Close()
-		errWriterErr := errWriter.Close()
-		if closeErr := errors.Join(outWriterErr, errWriterErr); closeErr != nil {
-			err = closeErr
-		}
+
+	go func() {
+		_, copyErr := stdcopy.StdCopy(outWriter, errWriter, logs)
+		outWriter.CloseWithError(copyErr)
+		errWriter.CloseWithError(copyErr)
 	}()
-	stdcopy.StdCopy(outWriter, errWriter, logs)
 
 	return id, outReader, errReader, err
 }
