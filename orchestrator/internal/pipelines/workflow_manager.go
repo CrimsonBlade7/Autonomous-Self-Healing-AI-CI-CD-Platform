@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 
 	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
@@ -37,6 +38,7 @@ func NewWorkflowManager() *WorkflowManager {
 	}
 }
 
+// Gets the workflow from an id.
 func (wfm *WorkflowManager) Get(id int) (WorkflowObject, bool) {
 	wfm.mutex.RLock()
 	defer wfm.mutex.RUnlock()
@@ -44,12 +46,14 @@ func (wfm *WorkflowManager) Get(id int) (WorkflowObject, bool) {
 	return val, exists
 }
 
+// Adds or replaces an id-workflow pair in the map.
 func (wfm *WorkflowManager) Set(id int, wo WorkflowObject) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
 	wfm.workflows[id] = wo
 }
 
+// Removes the workflow from the map.
 func (wfm *WorkflowManager) Remove(id int) {
 	wfm.mutex.Lock()
 	defer wfm.mutex.Unlock()
@@ -65,6 +69,11 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 
 		case errObject := <-wfm.wfErrChan:
 			slog.Error("Workflow failed", "wfid", errObject.wfid, "error", errObject.err)
+			wf, exists := wfm.Get(errObject.wfid)
+			if !exists {
+				panic(fmt.Sprintf("Workflow doesn't exist: %v", errObject.wfid))
+			}
+			wf.cancel()
 			wfm.Remove(errObject.wfid)
 
 		case task := <-taskChannel:
@@ -78,6 +87,11 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 				wfo, exists := wfm.Get(t.Wfid)
 				if !exists {
 					slog.Error("Workflow ID does not exist", "ID", t.Wfid)
+					continue
+				}
+
+				if wfo.workflow.status != "running" {
+					slog.Info("Workflow is not running and cannot recieve new tasks", "wfid", t.Wfid)
 					continue
 				}
 
@@ -106,12 +120,30 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 	wfo, exists := wfm.Get(num)
 	wf := wfo.workflow
 
+	runningActions := []string{
+		"closed",
+		"edited",
+		"synchronize",
+	}
+	stoppedActions := []string{
+		"opened",
+		"reopened",
+	}
+
+	if slices.Contains(runningActions, pr.Action) && pr.Action != "running" {
+		return fmt.Errorf("Workflow is not running: %v", wf.wfid)
+	}
+	if slices.Contains(stoppedActions, pr.Action) && pr.Action != "stopped" {
+		return fmt.Errorf("Workflow is running: %v", wf.wfid)
+	}
+
 	switch pr.Action {
 	case "opened":
 		// Creates and starts a new workflow for a new pr
 		if exists {
 			panic(fmt.Sprintf("Duplicate workflow: %v", num))
 		}
+
 		nwf, err := newWorkflow(pr, wfm.wfErrChan)
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
@@ -123,22 +155,27 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		if !exists {
 			panic(fmt.Sprintf("Attempting to close a workflow that does not exist: %v", num))
 		}
+
 		wfo.cancel()
 		if pr.Merged {
 			wfm.Remove(num)
 			slog.Info("Workflow removed", "wfid", wfo.workflow.wfid)
 		}
-		wf.jobs <- Job{
-			JobType: "close",
-			Task:    pr,
-		}
 		slog.Info("Workflow stopped", "wfid", wf.wfid)
 
 	case "reopened":
+		if !exists {
+			panic(fmt.Sprintf("Attempting to reopen a workflow that does not exist: %v", num))
+		}
+
 		wfm.openPr(ctx, cli, pr, wf)
 		slog.Info("Workflow repopened", "wfid", wfo.workflow.wfid)
 
 	case "edited":
+		if !exists {
+			panic(fmt.Sprintf("Attempting to edit a workflow that does not exist: %v", num))
+		}
+
 		wf.jobs <- Job{
 			JobType: "edit",
 			Task:    pr,
@@ -146,6 +183,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		slog.Info("Pull request updated", "wfid", wfo.workflow.wfid)
 
 	case "synchronize":
+		if !exists {
+			panic(fmt.Sprintf("Attempting to sync a workflow that does not exist: %v", num))
+		}
+
 		wf.jobs <- Job{
 			JobType: "sync",
 			Task:    pr,
