@@ -138,7 +138,6 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				}
 
 			case "run_tests":
-				// TODO: block tests from the wrong sha
 				aier, ok := job.Task.(types.AIEngineResponse)
 				if !ok {
 					panic("RUN_TESTS should always come from a pull request.")
@@ -205,7 +204,6 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 				}
 
 			case "commit_push":
-				// TODO: implement commit push
 				aier, ok := job.Task.(types.AIEngineResponse)
 				if !ok {
 					panic("RUN_TESTS should always come from a pull request.")
