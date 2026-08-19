@@ -12,19 +12,18 @@ import (
 
 type GitClient interface {
 	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
-	CommitPush(commitMsg, wsPath, branch, sha string) error
+	CommitPush(commitMsg, wsPath, branch, sha string) (string, error)
 	UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error
 }
 
 // Creates a unique temp directory in workspaceDir
-func tempWorkspace(dir, sha string) (path string, cleanup func() error, err error) {
-	path, err = os.MkdirTemp(dir, fmt.Sprintf("sha%s_*", sha))
+func tempWorkspace(sha string) (path string, cleanup func() error, err error) {
+	path, err = os.MkdirTemp(config.WsDir, fmt.Sprintf("sha%s_*", sha))
 	if err != nil {
 		return "", nil, err
 	}
 	cleanup = func() error {
-		cleanupErr := os.RemoveAll(path)
-		if cleanupErr != nil {
+		if cleanupErr := os.RemoveAll(path); cleanupErr != nil {
 			return fmt.Errorf("Failed remove the temporary directory %s: %w", path, cleanupErr)
 		}
 		return nil
@@ -32,13 +31,12 @@ func tempWorkspace(dir, sha string) (path string, cleanup func() error, err erro
 	return path, cleanup, nil
 }
 
-// Initializes the workspace and clones it into dest (which should be temp_workspaces)
+// Initializes the workspace and clones it into dest (which should be workspaces)
 func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (path string, cleanup func() error, err error) {
 
-	path, cleanup, err = tempWorkspace(config.WsDir, pr.HeadSHA)
+	path, cleanup, err = tempWorkspace(pr.HeadSHA)
 
-	err = cli.InitRepo(ctx, path, pr)
-	if err != nil {
+	if err := cli.InitRepo(ctx, path, pr); err != nil {
 		cleanerr := cleanup()
 		if cleanerr != nil {
 			return "", nil, fmt.Errorf("Failed to clean up workspace: %w", cleanerr)
@@ -66,7 +64,7 @@ func ClearWorkspaces() (err error) {
 	}
 
 	// Recreate the empty directory with original permissions
-	if err := os.MkdirAll(config.GetPath(config.WsDir), mode); err != nil {
+	if err := os.MkdirAll(config.WsDir, mode); err != nil {
 		return fmt.Errorf("Failed to recreate dir: %w", err)
 	}
 
@@ -76,15 +74,28 @@ func ClearWorkspaces() (err error) {
 // Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
 // If a test name does not exist, it will be logged, but no errors will be returned.
 func InsertTests(path string, data []byte) (err error) {
-	file, err := os.Create(config.GetPath(path))
+	file, err := os.Create(config.RelToAbsPath(path))
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
 
-	_, err = file.Write(data)
-	if err != nil {
+	if _, err := file.Write(data); err != nil {
 		return fmt.Errorf("Failed to write tests: %w", err)
 	}
-	
+
+	return nil
+}
+
+// Adds a summary file at path containing text.
+func WriteSummary(path, text string) error {
+	file, err := os.Create(config.RelToAbsPath(path))
+	if err != nil {
+		return fmt.Errorf("Failed to create summary file: %w", err)
+	}
+
+	if _, err := file.Write([]byte(text)); err != nil {
+		return fmt.Errorf("Failed to write summary: %w", err)
+	}
+
 	return nil
 }

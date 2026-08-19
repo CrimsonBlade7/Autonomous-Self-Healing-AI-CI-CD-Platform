@@ -15,15 +15,16 @@ import (
 )
 
 func main() {
+	// slogs are currently just printed to stdout
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
 	taskChannel := make(chan types.Task)
+	pcMap := types.NewPushedCommits()
 	wfm := pipelines.NewWorkflowManager()
 
 	// Initialize environment variables to global scope
-	err := config.Init()
-	if err != nil {
+	if err := config.Init(); err != nil {
 		slog.Error("Failed to initialize global variables", "error", err)
 		return
 	}
@@ -34,42 +35,37 @@ func main() {
 		return
 	}
 	defer func() {
-		err = cli.Close()
-		if err != nil {
+		if err := cli.Close(); err != nil {
 			slog.Error("Failed to close the docker client", "error", err)
 		}
 	}()
 
-	err = dockertools.ClearOldImages(mainCtx, cli)
-	if err != nil {
+	if err := dockertools.ClearOldImages(mainCtx, cli); err != nil {
 		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel)
+	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
+		slog.Error("Failed to clean old containers", "error", err)
+		return
+	}
 
-	go func() {
-		err = servertools.StartServer(mainCtx, taskChannel)
-		if err != nil {
-			slog.Error("Server failure", "error", err)
-			return
-		}
-	}()
+	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pcMap)
+
+	if err := servertools.StartServer(mainCtx, taskChannel, pcMap); err != nil {
+		slog.Error("Server failure", "error", err)
+		return
+	}
 }
 
 /*
 TODO List:
-	- testing
-		- add tests
-	- handle receiving prs while workflow is running
-		- cancel running containers
-		- clear images (optional?)
-		- if patches for the wrong sha are received, discard them
-	- handle hanging workflows due to errors
-	- dockerize this project
+	- testing *
+	- handle hanging workflows due to errors: currently we just drop the whole workflow with no retry
+	- dockerize this project and add persistance
 		- add docker volumes for workspaces
 		- also maybe for saving workflows?
-	- log storage
+		- log storage
 	- handle dead containers
 
 Wishlist

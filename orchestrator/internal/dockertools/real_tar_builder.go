@@ -8,13 +8,12 @@ import (
 	"path/filepath"
 )
 
-type RealTarBuilder struct {}
+type RealTarBuilder struct{}
 
 func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) (err error) {
 	tw := tar.NewWriter(pw)
 	defer func() {
-		closeErr := tw.Close()
-		if closeErr != nil {
+		if closeErr := tw.Close(); closeErr != nil {
 			err = closeErr
 		}
 	}()
@@ -44,8 +43,7 @@ func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) (err erro
 		}
 		header.Name = filepath.ToSlash(relPath)
 
-		err = tw.WriteHeader(header)
-		if err != nil {
+		if err = tw.WriteHeader(header); err != nil {
 			return fmt.Errorf("Failed to write header: %w", err)
 		}
 
@@ -55,13 +53,11 @@ func (tb *RealTarBuilder) TarWorkspace(pw *io.PipeWriter, path string) (err erro
 				return fmt.Errorf("Failed to open file %s: %w", path, err)
 			}
 			defer func() {
-				closeErr := file.Close()
-				if closeErr != nil {
+				if closeErr := file.Close(); closeErr != nil {
 					err = closeErr
 				}
 			}()
-			_, err = io.Copy(tw, file)
-			if err != nil {
+			if _, err = io.Copy(tw, file); err != nil {
 				return fmt.Errorf("Failed to write file contents to tar writer: %w", err)
 			}
 		}

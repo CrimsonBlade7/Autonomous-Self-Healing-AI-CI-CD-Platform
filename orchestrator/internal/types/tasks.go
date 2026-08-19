@@ -16,12 +16,15 @@ type Task interface {
 // Response should come with a HMAC-Signature-256 header.
 // Contains the tests and the summary.
 type AIEngineResponse struct {
-	Wfid int
-	Done bool
+	Wfid        int
+	PullRequest PullRequest
+	Done        bool
+
 	// Tests are included if the workflow needs to continue.
 	// Summary is included only if the workflow is complete.
-	Tests   []byte
-	Summary string
+	TestName string
+	Tests    []byte
+	Summary  string
 }
 
 func (aier AIEngineResponse) TaskType()
@@ -56,8 +59,7 @@ func (pr *PullRequest) UnmarshalpullRequest(data []byte) (err error) {
 		} `json:"pull_request"`
 	}
 
-	err = json.Unmarshal(data, &temp)
-	if err != nil {
+	if err := json.Unmarshal(data, &temp); err != nil {
 		return fmt.Errorf("Failed to unmarshal json data: %w", err)
 	}
 
