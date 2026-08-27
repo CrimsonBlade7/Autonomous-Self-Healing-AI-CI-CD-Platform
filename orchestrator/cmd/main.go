@@ -5,11 +5,11 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/dockertools"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/pipelines"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/servertools"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/dockertools"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/pipelines"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/servertools"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
 
 	"github.com/moby/moby/client"
 )

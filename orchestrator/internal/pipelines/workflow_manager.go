@@ -7,7 +7,7 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
 	"github.com/moby/moby/client"
 )
 

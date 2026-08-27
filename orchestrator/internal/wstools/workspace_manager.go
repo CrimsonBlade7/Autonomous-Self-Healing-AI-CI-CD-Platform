@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/config"
-	"github.com/CrimsonBlade7/Autonomous-AI-CI-CD-Platform/orchestrator/internal/types"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
 )
 
 type GitClient interface {
