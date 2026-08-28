@@ -40,8 +40,9 @@ const (
 
 // Sets the root directory.
 func resolveRootDir() error {
-	if envRoot := os.Getenv("PROJECT_ROOT"); envRoot != "" {
-		RootDir = envRoot
+	// Use env variable for the project root if it exists.
+	if root := os.Getenv("PROJECT_ROOT"); root != "" {
+		RootDir = root
 		return nil
 	}
 
@@ -50,12 +51,11 @@ func resolveRootDir() error {
 		return fmt.Errorf("Failed to get executable path: %w", err)
 	}
 
-	exePath, err = filepath.EvalSymlinks(exePath)
-	if err != nil {
+	if exePath, err = filepath.EvalSymlinks(exePath); err != nil {
 		return fmt.Errorf("Failed to resolve symlinks: %w", err)
 	}
 
-	// Under `go run` (temp folder), use current working directory.
+	// If the executable is in the current working directory, use the current working directory.
 	// Otherwise, default to the folder containing the binary.
 	if strings.Contains(exePath, os.TempDir()) {
 		cwd, err := os.Getwd()
@@ -200,6 +200,7 @@ func validateConfig() error {
 
 // Initializes the global variables.
 func Init() error {
+
 	if err := resolveRootDir(); err != nil {
 		return fmt.Errorf("Failed to resolve root directory: %w", err)
 	}

@@ -54,20 +54,13 @@ func InitWorkspace(ctx context.Context, pr types.PullRequest, cli GitClient) (pa
 // Clears the temp_workspace directory
 func ClearWorkspaces() (err error) {
 
-	// Get original folder permissions to recreate it accurately (optional)
-	info, err := os.Stat(config.WsDir)
-	mode := os.FileMode(0755)
-	if err == nil {
-		mode = info.Mode().Perm()
-	}
-
 	// Remove everything including the root dir
 	if err := os.RemoveAll(config.WsDir); err != nil {
 		return fmt.Errorf("Failed to remove dir: %w", err)
 	}
 
-	// Recreate the empty directory with original permissions
-	if err := os.MkdirAll(config.WsDir, mode); err != nil {
+	// Recreate the empty directory
+	if err := os.MkdirAll(config.WsDir, os.FileMode(0755)); err != nil {
 		return fmt.Errorf("Failed to recreate dir: %w", err)
 	}
 
