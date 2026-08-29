@@ -87,6 +87,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 		tarErr := tb.TarWorkspace(w, path)
 		if tarErr != nil {
 			slog.Error("Failed to tar the workspace", "error", tarErr)
+			return
 		}
 		if err := w.CloseWithError(tarErr); err != nil {
 			slog.Error("Pipe writter failed to close", "error", err)
@@ -176,7 +177,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 	case <-response.Result:
 		slog.Info("Container completed")
 	case err := <-response.Error:
-		slog.Error("Container error", "error", err)
+		return "", nil, nil, fmt.Errorf("Container failed: %w", err)
 	}
 
 	outReader, outWriter := io.Pipe()

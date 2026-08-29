@@ -188,7 +188,7 @@ func validateConfig() error {
 		missing = append(missing, "GITHUB_WEBHOOK_SECRET")
 	}
 	if AIEngineSecret == "" {
-		missing = append(missing, "AI_ENGINE_SECRET	")
+		missing = append(missing, "AI_ENGINE_SECRET")
 	}
 
 	if len(missing) > 0 {

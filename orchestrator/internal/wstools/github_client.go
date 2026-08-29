@@ -54,6 +54,9 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha
 	}
 
 	hash, err := wt.Commit(commitMsg, &git.CommitOptions{All: true})
+	if err != nil {
+		return "", fmt.Errorf("Failed to commit changes: %w", err)
+	}
 	newSha = hash.String()
 
 	remote, err := repo.Remote("origin")

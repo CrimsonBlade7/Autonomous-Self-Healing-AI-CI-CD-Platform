@@ -130,20 +130,23 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		"reopened",
 	}
 
-	if slices.Contains(runningActions, pr.Action) && wf.status != "running" {
-		return fmt.Errorf("Workflow is not running: %v", wf.wfid)
-	}
-	if slices.Contains(stoppedActions, pr.Action) && wf.status != "stopped" {
-		return fmt.Errorf("Workflow is running: %v", wf.wfid)
+	if exists {
+		if pr.Action == "opened" {
+			panic(fmt.Sprintf("Duplicate workflow: %v", pr.Number))
+		}
+		if slices.Contains(runningActions, pr.Action) && wf.status != "running" {
+			return fmt.Errorf("Workflow is not running: %v", wf.wfid)
+		}
+		if slices.Contains(stoppedActions, pr.Action) && wf.status != "stopped" {
+			return fmt.Errorf("Workflow is running: %v", wf.wfid)
+		}
+	} else if pr.Action != "opened" {
+		panic(fmt.Sprintf("Workflow does not exist: %v\n Action: %s", pr.Number, pr.Action))
 	}
 
 	switch pr.Action {
 	case "opened":
 		// Creates and starts a new workflow for a new pr
-		if exists {
-			panic(fmt.Sprintf("Duplicate workflow: %v", num))
-		}
-
 		nwf, err := newWorkflow(pr, wfm.wfErrChan)
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
@@ -152,10 +155,6 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		slog.Info("New workflow started", "wfid", nwf.wfid)
 
 	case "closed":
-		if !exists {
-			panic(fmt.Sprintf("Attempting to close a workflow that does not exist: %v", num))
-		}
-
 		wfo.cancel()
 		if pr.Merged {
 			wfm.Remove(num)
@@ -164,18 +163,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		slog.Info("Workflow stopped", "wfid", wf.wfid)
 
 	case "reopened":
-		if !exists {
-			panic(fmt.Sprintf("Attempting to reopen a workflow that does not exist: %v", num))
-		}
-
 		wfm.openPr(ctx, cli, pr, wf)
 		slog.Info("Workflow repopened", "wfid", wfo.workflow.wfid)
 
 	case "edited":
-		if !exists {
-			panic(fmt.Sprintf("Attempting to edit a workflow that does not exist: %v", num))
-		}
-
 		wf.jobs <- Job{
 			JobType: "edit",
 			Task:    pr,
