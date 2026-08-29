@@ -5,21 +5,37 @@ import (
 )
 
 type PushedCommits struct {
-	pushedCommits map[int]string
+	// Pull request number -> commit SHA
+	pushedCommits map[int]map[string]struct{}
 	mutex         sync.RWMutex
 }
 
-func (pc *PushedCommits) Get(num int) (string, bool) {
+// Checks if the sha exists at num.
+// Removes the sha if it exists.
+func (pc *PushedCommits) IsSelfPush(num int, sha string) bool {
 	pc.mutex.RLock()
 	defer pc.mutex.RUnlock()
-	sha, exists := pc.pushedCommits[num]
-	return sha, exists
+
+	shas, prExists := pc.pushedCommits[num]
+	if !prExists {
+		return false
+	}
+
+	_, shaExists := shas[sha]
+	if shaExists {
+		delete(shas, sha)
+	}
+	return shaExists
 }
 
-func (pc *PushedCommits) Set(num int, sha string) {
+func (pc *PushedCommits) Add(num int, sha string) {
 	pc.mutex.Lock()
 	defer pc.mutex.Unlock()
-	pc.pushedCommits[num] = sha
+
+	if pc.pushedCommits[num] == nil {
+		pc.pushedCommits[num] = make(map[string]struct{})
+	}
+	pc.pushedCommits[num][sha] = struct{}{}
 }
 
 func (pc *PushedCommits) Remove(num int) {
@@ -30,7 +46,7 @@ func (pc *PushedCommits) Remove(num int) {
 
 func NewPushedCommits() *PushedCommits {
 	return &PushedCommits{
-		pushedCommits: make(map[int]string),
+		pushedCommits: make(map[int]map[string]struct{}),
 		mutex:         sync.RWMutex{},
 	}
 }

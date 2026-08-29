@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
-	"github.com/moby/moby/client"
+	dockerClient "github.com/moby/moby/client"
 )
 
 // Wraps an error with a wfid.
@@ -61,7 +61,7 @@ func (wfm *WorkflowManager) Remove(id int) {
 }
 
 // Starts the run pipeline. Handles incoming workflows.
-func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client.Client, taskChannel <-chan types.Task, pc *types.PushedCommits) {
+func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *dockerClient.Client, taskChannel <-chan types.Task, pc *types.PushedCommits) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -100,7 +100,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 						JobType: "commit_push",
 						Task:    t,
 					}
-					pc.Set(t.PullRequest.Number, t.PullRequest.HeadSHA)
+					pc.Add(t.PullRequest.Number, t.PullRequest.HeadSHA)
 				} else {
 					wfo.workflow.jobs <- Job{
 						JobType: "run_tests",
@@ -115,7 +115,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *client
 	}
 }
 
-func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.Client, pr types.PullRequest) (err error) {
+func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest) (err error) {
 	num := pr.Number
 	wfo, exists := wfm.Get(num)
 	wf := wfo.workflow
@@ -130,10 +130,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 		"reopened",
 	}
 
-	if slices.Contains(runningActions, pr.Action) && pr.Action != "running" {
+	if slices.Contains(runningActions, pr.Action) && wf.status != "running" {
 		return fmt.Errorf("Workflow is not running: %v", wf.wfid)
 	}
-	if slices.Contains(stoppedActions, pr.Action) && pr.Action != "stopped" {
+	if slices.Contains(stoppedActions, pr.Action) && wf.status != "stopped" {
 		return fmt.Errorf("Workflow is running: %v", wf.wfid)
 	}
 
@@ -199,13 +199,14 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *client.C
 	return nil
 }
 
-func (wfm *WorkflowManager) openPr(ctx context.Context, cli *client.Client, pr types.PullRequest, wf *Workflow) {
+// Starts a workflow on pr.
+func (wfm *WorkflowManager) openPr(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest, wf *Workflow) {
 	subCtx, end := context.WithCancel(ctx)
 	wfm.Set(pr.Number, WorkflowObject{
 		workflow: wf,
 		cancel:   end,
 	})
-	go func(ctx context.Context, cli *client.Client) {
+	go func(ctx context.Context, cli *dockerClient.Client) {
 		defer end()
 		wf.runWorkflow(subCtx, cli)
 	}(subCtx, cli)

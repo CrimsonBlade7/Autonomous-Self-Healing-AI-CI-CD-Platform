@@ -67,8 +67,7 @@ func ClearWorkspaces() (err error) {
 	return nil
 }
 
-// Parses and inserts tests. If all is true, all tests will be selected. Otherwise, all tests in testNames will be selected,
-// If a test name does not exist, it will be logged, but no errors will be returned.
+// Parses and inserts tests.
 func InsertTests(path string, data []byte) (err error) {
 	file, err := os.Create(config.RelToAbsPath(path))
 	if err != nil {

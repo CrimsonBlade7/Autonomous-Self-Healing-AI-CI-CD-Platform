@@ -41,7 +41,7 @@ type PullRequest struct {
 }
 
 // Populates fields from a byte slice
-func (pr *PullRequest) UnmarshalpullRequest(data []byte) (err error) {
+func (pr *PullRequest) UnmarshalPullRequest(data []byte) (err error) {
 	var temp struct {
 		Action      string `json:"action"`
 		Number      int    `json:"number"`
