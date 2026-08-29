@@ -12,23 +12,23 @@ import (
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	dockerClient "github.com/moby/moby/client"
 )
 
 type ImageManager interface {
-	ImageList(ctx context.Context, options client.ImageListOptions) (client.ImageListResult, error)
-	ImageRemove(ctx context.Context, tag string, options client.ImageRemoveOptions) (client.ImageRemoveResult, error)
-	ImageBuild(ctx context.Context, buildContext io.Reader, options client.ImageBuildOptions) (client.ImageBuildResult, error)
+	ImageList(ctx context.Context, options dockerClient.ImageListOptions) (dockerClient.ImageListResult, error)
+	ImageRemove(ctx context.Context, tag string, options dockerClient.ImageRemoveOptions) (dockerClient.ImageRemoveResult, error)
+	ImageBuild(ctx context.Context, buildContext io.Reader, options dockerClient.ImageBuildOptions) (dockerClient.ImageBuildResult, error)
 }
 
 type ContainerManager interface {
-	ContainerList(ctx context.Context, options client.ContainerListOptions) (client.ContainerListResult, error)
-	ContainerCreate(ctx context.Context, options client.ContainerCreateOptions) (client.ContainerCreateResult, error)
-	ContainerRemove(ctx context.Context, containerID string, options client.ContainerRemoveOptions) (client.ContainerRemoveResult, error)
-	ContainerLogs(ctx context.Context, containerID string, options client.ContainerLogsOptions) (client.ContainerLogsResult, error)
-	ContainerStart(ctx context.Context, containerID string, options client.ContainerStartOptions) (client.ContainerStartResult, error)
-	ContainerWait(ctx context.Context, containerID string, options client.ContainerWaitOptions) client.ContainerWaitResult
-	ContainerInspect(ctx context.Context, containerID string, options client.ContainerInspectOptions) (client.ContainerInspectResult, error)
+	ContainerList(ctx context.Context, options dockerClient.ContainerListOptions) (dockerClient.ContainerListResult, error)
+	ContainerCreate(ctx context.Context, options dockerClient.ContainerCreateOptions) (dockerClient.ContainerCreateResult, error)
+	ContainerRemove(ctx context.Context, containerID string, options dockerClient.ContainerRemoveOptions) (dockerClient.ContainerRemoveResult, error)
+	ContainerLogs(ctx context.Context, containerID string, options dockerClient.ContainerLogsOptions) (dockerClient.ContainerLogsResult, error)
+	ContainerStart(ctx context.Context, containerID string, options dockerClient.ContainerStartOptions) (dockerClient.ContainerStartResult, error)
+	ContainerWait(ctx context.Context, containerID string, options dockerClient.ContainerWaitOptions) dockerClient.ContainerWaitResult
+	ContainerInspect(ctx context.Context, containerID string, options dockerClient.ContainerInspectOptions) (dockerClient.ContainerInspectResult, error)
 }
 
 type ContainerInspection struct {
@@ -48,12 +48,12 @@ var ImageBuildErr error = errors.New("Image build failed")
 
 // Removes up old images
 func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
-	images, err := im.ImageList(ctx, client.ImageListOptions{All: true})
+	images, err := im.ImageList(ctx, dockerClient.ImageListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
 	}
 	for _, item := range images.Items {
-		if _, err := im.ImageRemove(ctx, item.ID, client.ImageRemoveOptions{}); err != nil {
+		if _, err := im.ImageRemove(ctx, item.ID, dockerClient.ImageRemoveOptions{}); err != nil {
 			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
 	}
@@ -62,12 +62,12 @@ func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 
 // Removes up old containers
 func ClearOldContainers(ctx context.Context, cm ContainerManager) (err error) {
-	conts, err := cm.ContainerList(ctx, client.ContainerListOptions{All: true})
+	conts, err := cm.ContainerList(ctx, dockerClient.ContainerListOptions{All: true})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch container list: %w", err)
 	}
 	for _, item := range conts.Items {
-		if _, err := cm.ContainerRemove(ctx, item.ID, client.ContainerRemoveOptions{}); err != nil {
+		if _, err := cm.ContainerRemove(ctx, item.ID, dockerClient.ContainerRemoveOptions{}); err != nil {
 			return fmt.Errorf("Failed to remove image %s: %w", item.ID, err)
 		}
 	}
@@ -96,7 +96,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 
 	tag = fmt.Sprintf("%s:%s", wsName, sha)
 
-	imageResult, err := im.ImageBuild(ctx, pr, client.ImageBuildOptions{
+	imageResult, err := im.ImageBuild(ctx, pr, dockerClient.ImageBuildOptions{
 		Tags:       []string{tag},
 		Dockerfile: "Dockerfile",
 	})
@@ -141,7 +141,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 // The caller is responsible for closing the logs and removing the container.
 func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id string, outReader io.ReadCloser, errReader io.ReadCloser, err error) {
 
-	cont, err := cm.ContainerCreate(ctx, client.ContainerCreateOptions{
+	cont, err := cm.ContainerCreate(ctx, dockerClient.ContainerCreateOptions{
 		Config: &container.Config{
 			Env: config.TestingEnvSlice,
 		},
@@ -159,7 +159,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 
 	id = cont.ID
 
-	logs, err := cm.ContainerLogs(ctx, id, client.ContainerLogsOptions{
+	logs, err := cm.ContainerLogs(ctx, id, dockerClient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -167,11 +167,11 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 		return "", nil, nil, fmt.Errorf("Failed to create a container logger: %w", err)
 	}
 
-	if _, err := cm.ContainerStart(ctx, id, client.ContainerStartOptions{}); err != nil {
+	if _, err := cm.ContainerStart(ctx, id, dockerClient.ContainerStartOptions{}); err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to start container: %w", err)
 	}
 
-	response := cm.ContainerWait(ctx, id, client.ContainerWaitOptions{})
+	response := cm.ContainerWait(ctx, id, dockerClient.ContainerWaitOptions{})
 	select {
 	case <-response.Result:
 		slog.Info("Container completed")
@@ -193,7 +193,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 
 // Returns current state of a completed container as a ContainerInspection struct.
 func InspectContainer(ctx context.Context, cm ContainerManager, id string) (inspection ContainerInspection, err error) {
-	cont, err := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	cont, err := cm.ContainerInspect(ctx, id, dockerClient.ContainerInspectOptions{})
 	if err != nil {
 		return ContainerInspection{}, fmt.Errorf("Failed to inspect container %s: %w", id, err)
 	}
@@ -219,13 +219,13 @@ func InspectContainer(ctx context.Context, cm ContainerManager, id string) (insp
 
 // Removes the specified container.
 func RemoveContainer(ctx context.Context, cm ContainerManager, id string) (err error) {
-	cont, err := cm.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	cont, err := cm.ContainerInspect(ctx, id, dockerClient.ContainerInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("Failed to inspect container %s: %w", id, err)
 	}
 
 	// Removes volumes for now
-	if _, err := cm.ContainerRemove(ctx, cont.Container.ID, client.ContainerRemoveOptions{RemoveVolumes: true}); err != nil {
+	if _, err := cm.ContainerRemove(ctx, cont.Container.ID, dockerClient.ContainerRemoveOptions{RemoveVolumes: true}); err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
 	return nil
@@ -233,7 +233,7 @@ func RemoveContainer(ctx context.Context, cm ContainerManager, id string) (err e
 
 // Removes the specified image.
 func RemoveImage(ctx context.Context, im ImageManager, tag string) (err error) {
-	if _, err := im.ImageRemove(ctx, tag, client.ImageRemoveOptions{}); err != nil {
+	if _, err := im.ImageRemove(ctx, tag, dockerClient.ImageRemoveOptions{}); err != nil {
 		return fmt.Errorf("Failed to remove container: %w", err)
 	}
 	return nil

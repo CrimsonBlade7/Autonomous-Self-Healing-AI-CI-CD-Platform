@@ -72,7 +72,7 @@ func resolveRootDir() error {
 // Loads the environment variables to be injected into the docker container for testing.
 func loadTestingEnvVars() error {
 	// Target the nested config directory
-	envPath := RelToAbsPath("config", "test-env-vars.txt")
+	envPath := RelToAbsPath("orchestrator", "config", "test-env-vars.txt")
 
 	testEnvFile, err := os.Open(envPath)
 	if err != nil {
@@ -98,7 +98,7 @@ func loadTestingEnvVars() error {
 // Loads the environment variables.
 func loadEnv() error {
 	// Root level .env file
-	envPath := RelToAbsPath(".env")
+	envPath := RelToAbsPath("orchestrator", ".env")
 	if err := godotenv.Load(envPath); err != nil {
 		// Non-fatal if running in environments where variables are injected directly (e.g., Docker/K8s)
 		if !os.IsNotExist(err) {
@@ -174,7 +174,7 @@ func loadEnv() error {
 	return nil
 }
 
-// Returns an error if certain environment variables are missing.
+// Returns an error if critical environment variables are missing.
 func validateConfig() error {
 	var missing []string
 

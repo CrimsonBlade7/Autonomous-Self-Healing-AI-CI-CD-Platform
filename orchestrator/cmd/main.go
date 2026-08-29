@@ -11,7 +11,7 @@ import (
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/servertools"
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
 
-	"github.com/moby/moby/client"
+	dockerClient "github.com/moby/moby/client"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 		return
 	}
 
-	cli, err := client.New(client.FromEnv)
+	cli, err := dockerClient.New(dockerClient.FromEnv)
 	if err != nil {
 		slog.Error("Failed to start moby client", "error", err)
 		return

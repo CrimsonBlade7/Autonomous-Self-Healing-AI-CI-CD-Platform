@@ -14,7 +14,7 @@ import (
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/servertools"
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/wstools"
-	"github.com/moby/moby/client"
+	dockerClient "github.com/moby/moby/client"
 )
 
 type Workflow struct {
@@ -60,9 +60,9 @@ func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow
 }
 
 // Starts the job pipeline. Handles incoming jobs. Blocks until an error occurs.
-func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
+func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client) {
 	wf.status = "running"
-	for {
+	for wf.status == "running" {
 		select {
 		case <-ctx.Done():
 			wf.status = "stopped"
@@ -71,16 +71,15 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 					wfid: wf.wfid,
 					err:  fmt.Errorf("Failed to clean up workspace: %w", err),
 				}
-				continue
 			}
 			if err := servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid}); err != nil {
 				wf.errorChannel <- ErrorObject{
 					wfid: wf.wfid,
 					err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
 				}
-				continue
 			}
 			return
+			
 		case job := <-wf.jobs:
 			switch job.JobType {
 			case "open":
@@ -231,7 +230,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *client.Client) {
 }
 
 // Creates a container, runs it, and removes it. Returns a ContainerInspection, stdout, stderr, and an error.
-func processContainer(ctx context.Context, tag string, cli *client.Client) (inspect dockertools.ContainerInspection, logOutString string, logErrString string, err error) {
+func processContainer(ctx context.Context, tag string, cli *dockerClient.Client) (inspect dockertools.ContainerInspection, logOutString string, logErrString string, err error) {
 	subContext, cancel := context.WithTimeout(ctx, time.Duration(config.ContainerTimeout)*time.Minute)
 	defer cancel()
 	contID, logOut, logErr, err := dockertools.RunContainer(subContext, cli, tag)

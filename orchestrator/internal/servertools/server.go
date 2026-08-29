@@ -23,15 +23,22 @@ import (
 )
 
 // Generates the HMAC key based on the message and secret
-func generateHMAC(message []byte, secret string) string {
+func generateHMAC(message []byte, secret string) (string, error) {
 	hash := hmac.New(sha256.New, []byte(secret))
-	hash.Write(message)
-	return hex.EncodeToString(hash.Sum(nil))
+	_, err := hash.Write(message)
+	if err != nil {
+		return "", fmt.Errorf("Failed to write HMAC hash: %w", err)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // Verifies if the message is legitimate
-func verifyMessage(message []byte, secret, signature string) bool {
-	return hmac.Equal([]byte(signature), []byte(generateHMAC(message, secret)))
+func verifyMessage(message []byte, secret, actualSig string) (bool, error) {
+	realSig, err := generateHMAC(message, secret)
+	if err != nil {
+		return false, fmt.Errorf("Failed to verify HMAC signature: %w", err)
+	}
+	return hmac.Equal([]byte(actualSig), []byte(realSig)), err
 }
 
 // Returns time.Duration of n seconds
@@ -61,8 +68,13 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 			return
 		}
 
-		realSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
-		if !verifyMessage(body, config.GithubSecret, realSig) {
+		actualSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
+		verified, err := verifyMessage(body, config.GithubSecret, actualSig)
+		if err != nil {
+			slog.Error("Failed to verify message", "error", err)
+			return
+		}
+		if !verified {
 			w.WriteHeader(http.StatusUnauthorized)
 			slog.Warn("Unauthorized request", "warn", err)
 			return
@@ -74,12 +86,12 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 		}
 
 		var pr types.PullRequest
-		if err := pr.UnmarshalpullRequest(body); err != nil {
+		if err := pr.UnmarshalPullRequest(body); err != nil {
 			slog.Error("Failed to unmsarhsal the pull request", "error", err)
 			return
 		}
 
-		if sha, _ := pc.Get(pr.Number); pr.HeadSHA == sha {
+		if pc.IsSelfPush(pr.Number, pr.HeadSHA) {
 			slog.Info("Webhook originates from this platform")
 			return
 		}
@@ -110,8 +122,13 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 			return
 		}
 
-		realSig := r.Header.Get("HMAC-Signature-256")
-		if !verifyMessage(body, config.AIEngineSecret, realSig) {
+		actualSig := r.Header.Get("HMAC-Signature-256")
+		if err != nil {
+			slog.Error("Failed to verify message", "error", err)
+			return
+		}
+		verified, err := verifyMessage(body, config.AIEngineSecret, actualSig)
+		if !verified {
 			w.WriteHeader(http.StatusUnauthorized)
 			slog.Warn("Unauthorized request", "warn", err)
 			return
@@ -213,8 +230,7 @@ func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.P
 	<-lifetime.Done()
 
 	// create a context for duration of the server shutdown
-	countdown := time.Duration(config.ServerShutdownTimeout) * time.Second
-	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, countdown)
+	shutdownCtx, cancelShutdown := context.WithTimeout(ctx, seconds(config.ServerShutdownTimeout))
 	defer cancelShutdown()
 
 	// shutting down the server
