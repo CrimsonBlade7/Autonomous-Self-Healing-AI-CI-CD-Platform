@@ -66,10 +66,13 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client) {
 		select {
 		case <-ctx.Done():
 			wf.status = "stopped"
-			if err := wf.cleanWs(); err != nil {
-				wf.errorChannel <- ErrorObject{
-					wfid: wf.wfid,
-					err:  fmt.Errorf("Failed to clean up workspace: %w", err),
+			if wf.cleanWs != nil {
+				if err := wf.cleanWs(); err != nil {
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err:  fmt.Errorf("Failed to clean up workspace: %w", err),
+					}
+					return
 				}
 			}
 			if err := servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid}); err != nil {
@@ -77,9 +80,10 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client) {
 					wfid: wf.wfid,
 					err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
 				}
+				return
 			}
 			return
-			
+
 		case job := <-wf.jobs:
 			switch job.JobType {
 			case "open":
