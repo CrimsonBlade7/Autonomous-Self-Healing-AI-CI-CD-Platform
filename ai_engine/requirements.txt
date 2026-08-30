@@ -21,6 +21,3 @@ anthropic>=0.28.0
 
 # Settings management — reads env vars / .env files via Pydantic
 pydantic-settings>=2.3.0
-
-# Async HTTP client — used to POST AIEngineResponse callbacks to the orchestrator
-httpx>=0.27.0
