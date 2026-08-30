@@ -16,7 +16,7 @@ import (
 
 type GithubClient struct{}
 
-// Initializes the repository at path.
+// Initializes the repository in the directory at path.
 func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) (err error) {
 	repo, err := git.PlainInit(path, false)
 	if err != nil {
@@ -37,7 +37,8 @@ func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullR
 	return nil
 }
 
-func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha string, err error) {
+// Adds, commits, and pushes changes to remote. Returns the new sha and an error.
+func (c *GithubClient) AddAllCommitPush(commitMsg, wsPath, branch, sha string) (newSha string, err error) {
 
 	repo, err := git.PlainOpen(wsPath)
 	if err != nil {
@@ -78,6 +79,7 @@ func (c *GithubClient) CommitPush(commitMsg, wsPath, branch, sha string) (newSha
 	return newSha, nil
 }
 
+// Fetches and checksout the latest changes from remote.
 func (c *GithubClient) UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) (err error) {
 	// fetch specific sha
 	repo, err := git.PlainOpen(wsPath)

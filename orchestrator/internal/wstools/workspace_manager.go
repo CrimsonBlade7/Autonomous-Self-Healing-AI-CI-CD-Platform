@@ -11,8 +11,11 @@ import (
 )
 
 type GitClient interface {
+	// Initializes the repository in the directory at path.
 	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
-	CommitPush(commitMsg, wsPath, branch, sha string) (string, error)
+	// Adds, commits, and pushes changes to remote. Returns the new sha and an error.
+	AddAllCommitPush(commitMsg, wsPath, branch, sha string) (string, error)
+	// Fetches and checksout the latest changes from remote.
 	UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error
 }
 

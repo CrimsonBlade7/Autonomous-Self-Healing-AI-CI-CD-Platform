@@ -60,7 +60,7 @@ func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow
 }
 
 // Starts the job pipeline. Handles incoming jobs. Blocks until an error occurs.
-func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client) {
+func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, pc *types.PushedCommits) {
 	wf.status = "running"
 	for wf.status == "running" {
 		select {
@@ -225,6 +225,14 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client) {
 					}
 					continue
 				}
+				newSha, err := wf.SendUpdatesToRemote(&wstools.GithubClient{})
+				if err != nil {
+					wf.errorChannel <- ErrorObject{
+						wfid: wf.wfid,
+						err: fmt.Errorf("Failed to update remote: %w", err),
+					}
+				}
+				pc.Add(wf.wfid, newSha)
 
 			default:
 				panic(fmt.Sprintf("Unsupported job type: %v", job))
@@ -273,4 +281,13 @@ func processContainer(ctx context.Context, tag string, cli *dockerClient.Client)
 	}
 
 	return inspect, logOutString, logErrString, err
+}
+
+// Adds, commits, and pushes current workspace state to remote.
+func (wf *Workflow) SendUpdatesToRemote(cli wstools.GitClient) (newSha string, err error) {
+	newSha, err = cli.AddAllCommitPush("", wf.path, wf.pullRequest.Branch, wf.pullRequest.HeadSHA)
+	if err != nil {
+		return "", fmt.Errorf("Failed to add, commit, and push changes: %w", err)
+	}
+	return newSha, nil
 }
