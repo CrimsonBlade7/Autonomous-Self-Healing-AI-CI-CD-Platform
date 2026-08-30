@@ -69,6 +69,7 @@ TODO List:
 		- workflows
 		- log storage
 	- handle dead containers
+	- fix .env overriding GB multiplier *
 
 Wishlist
 	- multi-service testing

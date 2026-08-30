@@ -151,7 +151,7 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 // close: Close and merge implied; end associated workflow and update rag index.
 // logs: Return the logs of the last test run.
 // edit: Update pr information.
-// sync: update branch head
+// sync: Update branch head
 func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) (err error) {
 	validJobTypes := []string{
 		"open",
@@ -179,6 +179,11 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 		return fmt.Errorf("Failed to create http request: %w", err)
 	}
 
+	hmacSig, err := generateHMAC(msgBytes, config.AIEngineSecret)
+	if err != nil {
+		return fmt.Errorf("Failed to generate HMAC: %w", err)
+	}
+	httpReq.Header.Set("HMAC-Signature-256", hmacSig)
 	httpReq.Header.Set("Accept", "application/json")
 	httpReq.Header.Set("Job-Type", jobType)
 

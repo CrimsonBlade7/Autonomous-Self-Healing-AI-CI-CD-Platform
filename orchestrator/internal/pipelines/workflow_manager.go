@@ -117,7 +117,7 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *docker
 func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest, pc *types.PushedCommits) (err error) {
 	num := pr.Number
 	wfo, exists := wfm.Get(num)
-	wf := wfo.workflow
+	var wf *Workflow
 
 	runningActions := []string{
 		"closed",
@@ -130,6 +130,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 	}
 
 	if exists {
+		wf = wfo.workflow
 		if pr.Action == "opened" {
 			panic(fmt.Sprintf("Duplicate workflow: %v", pr.Number))
 		}
@@ -146,12 +147,12 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 	switch pr.Action {
 	case "opened":
 		// Creates and starts a new workflow for a new pr
-		nwf, err := newWorkflow(pr, wfm.wfErrChan)
+		wf, err := newWorkflow(pr, wfm.wfErrChan)
 		if err != nil {
 			return fmt.Errorf("Failed to create a new workflow: %w", err)
 		}
-		wfm.openPr(ctx, cli, pr, nwf, pc)
-		slog.Info("New workflow started", "wfid", nwf.wfid)
+		wfm.openPr(ctx, cli, pr, wf, pc)
+		slog.Info("New workflow started", "wfid", wf.wfid)
 
 	case "closed":
 		wfo.cancel()
