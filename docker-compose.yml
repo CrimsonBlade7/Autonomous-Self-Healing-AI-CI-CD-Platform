@@ -59,6 +59,8 @@ services:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
       REDIS_URL: redis://redis:6379/0
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ORCHESTRATOR_URL: http://orchestrator:8080
+      AI_ENGINE_SECRET: ${AI_ENGINE_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
