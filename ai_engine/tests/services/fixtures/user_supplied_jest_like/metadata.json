@@ -1,0 +1,8 @@
+{
+  "name": "user_supplied_jest_like",
+  "source": "user",
+  "language": "node",
+  "framework": "jest",
+  "expected_confidence_band": "medium",
+  "notes": "Example of user-provided test logs entering the same fixture pipeline as CI logs."
+}

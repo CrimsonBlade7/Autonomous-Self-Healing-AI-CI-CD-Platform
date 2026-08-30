@@ -29,5 +29,11 @@ class Settings(BaseSettings):
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
 
+    # Orchestrator callback — where to POST AIEngineResponse after processing a job.
+    orchestrator_url: str = "http://localhost:8080"
+
+    # Shared secret for HMAC-signing responses sent to the orchestrator.
+    ai_engine_secret: str = ""
+
 
 settings = Settings()

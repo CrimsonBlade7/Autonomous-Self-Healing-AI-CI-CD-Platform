@@ -1,0 +1,8 @@
+{
+  "name": "python_traceback",
+  "source": "ci",
+  "language": "python",
+  "framework": "pytest",
+  "expected_confidence_band": "high",
+  "notes": "Baseline Python traceback fixture for stable signature checks."
+}

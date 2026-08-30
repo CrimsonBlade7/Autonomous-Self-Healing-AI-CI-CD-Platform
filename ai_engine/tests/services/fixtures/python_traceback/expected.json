@@ -1,0 +1,11 @@
+{
+  "error_type": "AssertionError",
+  "failing_test": "unknown",
+  "stack_trace_lines": [
+    "Traceback (most recent call last):",
+    "File \"tests/test_math.py\", line 10, in test_divide",
+    "assert divide(1, 0) == 0",
+    "AssertionError: divide by zero guard missing"
+  ],
+  "error_signature": "AssertionError | unknown | divide by zero guard missing"
+}
