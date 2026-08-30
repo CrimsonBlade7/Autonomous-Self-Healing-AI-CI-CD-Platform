@@ -22,13 +22,13 @@ var (
 	AIEngineSecret          string
 	AIEnginePort            string = "8000"
 	TestingEnvSlice         []string
-	AiEngineRequestTimeout  int = 5
-	ServerShutdownTimeout   int = 30
-	ReadHeaderTimeout       int = 2
-	WriteTimeout            int = 5
+	AiEngineRequestTimeout  int = 5   // seconds
+	ServerShutdownTimeout   int = 30  // seconds
+	ReadHeaderTimeout       int = 2   // seconds
+	WriteTimeout            int = 5   // seconds
+	ContainerTimeout        int = 10  // minutes
+	ContainerMemoryCap      int = 512 // MB
 	MaxTestPatchingAttempts int = 10
-	ContainerTimeout        int = 10     // in minutes
-	ContainerMemoryCap      int = 2 * GB // in bytes
 )
 
 const (
