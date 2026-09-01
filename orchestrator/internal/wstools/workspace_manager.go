@@ -12,11 +12,9 @@ import (
 
 type GitClient interface {
 	// Initializes the repository in the directory at path.
-	InitRepo(ctx context.Context, path string, pr types.PullRequest) error
+	InitRepo(ctx context.Context, path string, pr types.PullRequest) (err error)
 	// Adds, commits, and pushes changes to remote. Returns the new sha and an error.
-	AddAllCommitPush(commitMsg, wsPath, branch, sha string) (string, error)
-	// Fetches and checksout the latest changes from remote.
-	UpdateWorkspace(ctx context.Context, wsPath string, pr types.PullRequest) error
+	AddAllCommitPush(commitMsg, wsPath, branch string) (string, error)
 }
 
 // Creates a unique temp directory in workspaceDir
@@ -72,7 +70,7 @@ func ClearWorkspaces() (err error) {
 
 // Parses and inserts tests.
 func InsertTests(path string, data []byte) (err error) {
-	file, err := os.Create(config.RelToAbsPath(path))
+	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
@@ -85,8 +83,8 @@ func InsertTests(path string, data []byte) (err error) {
 }
 
 // Adds a summary file at path containing text.
-func WriteSummary(path, text string) error {
-	file, err := os.Create(config.RelToAbsPath(path))
+func WriteSummary(path, text string) (err error) {
+	file, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("Failed to create summary file: %w", err)
 	}
@@ -97,3 +95,4 @@ func WriteSummary(path, text string) error {
 
 	return nil
 }
+

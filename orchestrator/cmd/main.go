@@ -40,13 +40,13 @@ func main() {
 		}
 	}()
 
-	if err := dockertools.ClearOldImages(mainCtx, cli); err != nil {
-		slog.Error("Failed to clean old images", "error", err)
+	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
+		slog.Error("Failed to clean old containers", "error", err)
 		return
 	}
 
-	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
-		slog.Error("Failed to clean old containers", "error", err)
+	if err := dockertools.ClearOldImages(mainCtx, cli); err != nil {
+		slog.Error("Failed to clean old images", "error", err)
 		return
 	}
 
@@ -69,7 +69,7 @@ TODO List:
 		- workflows
 		- log storage
 	- handle dead containers
-	- fix .env overriding GB multiplier *
+	- list testing and platform limitations and conditions; close platfrom if conditions are not met *
 
 Wishlist
 	- multi-service testing

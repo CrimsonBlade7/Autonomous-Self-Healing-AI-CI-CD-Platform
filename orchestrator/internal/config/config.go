@@ -14,21 +14,22 @@ import (
 var (
 	WsDir string
 
-	RootDir                 string
-	Port                    string = "8080"
-	GithubToken             string
-	RepositoryUrl           string
-	GithubSecret            string
-	AIEngineSecret          string
-	AIEnginePort            string = "8000"
-	TestingEnvSlice         []string
-	AiEngineRequestTimeout  int = 5   // seconds
-	ServerShutdownTimeout   int = 30  // seconds
-	ReadHeaderTimeout       int = 2   // seconds
-	WriteTimeout            int = 5   // seconds
-	ContainerTimeout        int = 10  // minutes
-	ContainerMemoryCap      int = 512 // MB
-	MaxTestPatchingAttempts int = 10
+	RootDir                     string
+	Port                        string = "8080"
+	GithubToken                 string
+	RepositoryUrl               string
+	GithubSecret                string
+	AIEngineSecret              string
+	AIEnginePort                string = "8000"
+	TestingEnvSlice             []string
+	AiEngineRequestTimeout      int = 5   // seconds
+	ServerShutdownTimeout       int = 30  // seconds
+	ReadHeaderTimeout           int = 2   // seconds
+	WriteTimeout                int = 5   // seconds
+	ContainerTimeout            int = 10  // minutes
+	AIEngineRequestCloseTimeout int = 10  // seconds
+	ContainerMemoryCap          int = 512 // MB
+	MaxTestPatchingAttempts     int = 10
 )
 
 const (

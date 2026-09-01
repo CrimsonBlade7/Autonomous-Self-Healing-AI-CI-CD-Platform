@@ -68,6 +68,11 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 			return
 		}
 
+		if r.Header.Get("Content-Type") != "application/json" {
+			slog.Error("Webhook body must be JSON")
+			return
+		}
+
 		actualSig := strings.TrimPrefix(r.Header.Get("X-Hub-Signature-256"), "sha256=")
 		verified, err := verifyMessage(body, config.GithubSecret, actualSig)
 		if err != nil {
@@ -119,6 +124,11 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			slog.Error("Webhook body must be JSON")
 			return
 		}
 
@@ -184,7 +194,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 		return fmt.Errorf("Failed to generate HMAC: %w", err)
 	}
 	httpReq.Header.Set("HMAC-Signature-256", hmacSig)
-	httpReq.Header.Set("Accept", "application/json")
+	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Job-Type", jobType)
 
 	resp, err := cli.Do(httpReq)

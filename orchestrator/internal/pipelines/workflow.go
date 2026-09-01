@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
@@ -21,7 +22,8 @@ type Workflow struct {
 	wfid             int // The pr number
 	pullRequest      types.PullRequest
 	jobs             chan Job
-	path             string       // Path to the associated workspace.
+	path             string // Path to the associated workspace.
+	pathMutex        sync.RWMutex
 	cleanWs          func() error // Removes the workspace at path.
 	attemptNum       int
 	currentTestsPath string
@@ -30,7 +32,9 @@ type Workflow struct {
 	// Can be one of:
 	// - "running": currently processing a pr
 	// - "stopped": temporarily paused
-	status string
+	// Currently a string if new statuses are added.
+	status      string
+	statusMutex sync.RWMutex
 }
 
 type Job struct {
@@ -51,21 +55,54 @@ func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow
 		wfid:         pr.Number,
 		pullRequest:  pr,
 		jobs:         make(chan Job),
+		pathMutex:    sync.RWMutex{},
 		attemptNum:   0,
 		errorChannel: errChan,
 		status:       "stopped",
+		statusMutex:  sync.RWMutex{},
 	}
 
 	return wf, nil
 }
 
+func (wf *Workflow) GetPath() string {
+	wf.pathMutex.RLock()
+	defer wf.pathMutex.RUnlock()
+	return wf.path
+}
+
+func (wf *Workflow) SetPath(p string) {
+	wf.statusMutex.Lock()
+	defer wf.statusMutex.Unlock()
+	wf.path = p
+}
+
+func (wf *Workflow) GetStatus() string {
+	wf.statusMutex.RLock()
+	defer wf.statusMutex.RUnlock()
+	return wf.path
+}
+
+func (wf *Workflow) SetRunning() {
+	wf.statusMutex.Lock()
+	defer wf.statusMutex.Unlock()
+	wf.status = "running"
+}
+
+func (wf *Workflow) SetStopped() {
+	wf.statusMutex.Lock()
+	defer wf.statusMutex.Unlock()
+	wf.status = "stopped"
+}
+
+
 // Starts the job pipeline. Handles incoming jobs. Blocks until an error occurs.
 func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, pc *types.PushedCommits) {
-	wf.status = "running"
+	wf.SetRunning()
 	for wf.status == "running" {
 		select {
 		case <-ctx.Done():
-			wf.status = "stopped"
+			wf.SetStopped()
 			if wf.cleanWs != nil {
 				if err := wf.cleanWs(); err != nil {
 					wf.errorChannel <- ErrorObject{
@@ -75,7 +112,9 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 					return
 				}
 			}
-			if err := servertools.SendRequestAIEngine(ctx, "close", types.AIEngineRequest{Wfid: wf.wfid}); err != nil {
+			newCtx, cancel := context.WithTimeout(context.Background(), time.Duration(config.AIEngineRequestCloseTimeout)*time.Second)
+			defer cancel()
+			if err := servertools.SendRequestAIEngine(newCtx, "close", types.AIEngineRequest{Wfid: wf.wfid}); err != nil {
 				wf.errorChannel <- ErrorObject{
 					wfid: wf.wfid,
 					err:  fmt.Errorf("Failed to send request to ai engine: %w", err),
@@ -229,7 +268,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				if err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
-						err: fmt.Errorf("Failed to update remote: %w", err),
+						err:  fmt.Errorf("Failed to update remote: %w", err),
 					}
 				}
 				pc.Add(wf.wfid, newSha)
@@ -285,7 +324,7 @@ func processContainer(ctx context.Context, tag string, cli *dockerClient.Client)
 
 // Adds, commits, and pushes current workspace state to remote.
 func (wf *Workflow) SendUpdatesToRemote(cli wstools.GitClient) (newSha string, err error) {
-	newSha, err = cli.AddAllCommitPush("", wf.path, wf.pullRequest.Branch, wf.pullRequest.HeadSHA)
+	newSha, err = cli.AddAllCommitPush("", wf.path, wf.pullRequest.Branch)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add, commit, and push changes: %w", err)
 	}

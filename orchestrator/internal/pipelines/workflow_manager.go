@@ -70,27 +70,26 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *docker
 		case errObject := <-wfm.wfErrChan:
 			slog.Error("Workflow failed", "wfid", errObject.wfid, "error", errObject.err)
 			wf, exists := wfm.Get(errObject.wfid)
-			if !exists {
-				panic(fmt.Sprintf("Workflow doesn't exist: %v", errObject.wfid))
+			if exists {
+				wf.cancel()
+				wfm.Remove(errObject.wfid)
 			}
-			wf.cancel()
-			wfm.Remove(errObject.wfid)
 
 		case task := <-taskChannel:
 			switch t := task.(type) {
-			case types.PullRequest:
-				if err := wfm.handlePullRequest(ctx, cli, t, pc); err != nil {
+			case *types.PullRequest:
+				if err := wfm.handlePullRequest(ctx, cli, *t, pc); err != nil {
 					slog.Error("Failed to handle pull request", "error", err)
 				}
 
-			case types.AIEngineResponse:
+			case *types.AIEngineResponse:
 				wfo, exists := wfm.Get(t.Wfid)
 				if !exists {
 					slog.Error("Workflow ID does not exist", "ID", t.Wfid)
 					continue
 				}
 
-				if wfo.workflow.status != "running" {
+				if wfo.workflow.GetStatus() != "running" {
 					slog.Info("Workflow is not running and cannot recieve new tasks", "wfid", t.Wfid)
 					continue
 				}
@@ -134,10 +133,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		if pr.Action == "opened" {
 			panic(fmt.Sprintf("Duplicate workflow: %v", pr.Number))
 		}
-		if slices.Contains(runningActions, pr.Action) && wf.status != "running" {
+		if slices.Contains(runningActions, pr.Action) && wf.GetStatus() != "running" {
 			return fmt.Errorf("Workflow is not running: %v", wf.wfid)
 		}
-		if slices.Contains(stoppedActions, pr.Action) && wf.status != "stopped" {
+		if slices.Contains(stoppedActions, pr.Action) && wf.GetStatus() != "stopped" {
 			return fmt.Errorf("Workflow is running: %v", wf.wfid)
 		}
 	} else if pr.Action != "opened" {
