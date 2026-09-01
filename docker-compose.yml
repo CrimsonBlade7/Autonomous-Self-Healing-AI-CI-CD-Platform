@@ -10,11 +10,11 @@
 #   ANTHROPIC_API_KEY=<your key>
 #
 # Usage:
-#   docker compose -f docker/docker-compose.yml up --build
+#   docker compose up --build
 #
 # NOTE: PostgreSQL runs the SQL files in migrations/ as init scripts on first
 # startup (when the data volume is empty). If you change the schema, run:
-#   docker compose -f docker/docker-compose.yml down -v
+#   docker compose down -v
 # to wipe the volume and re-apply migrations from scratch.
 
 services:
@@ -30,7 +30,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Mount migrations as init scripts; executed once in alphabetical order.
-      - ../migrations:/docker-entrypoint-initdb.d:ro
+      - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d aiplatform"]
       interval: 10s
@@ -50,8 +50,8 @@ services:
 
   ai-engine:
     build:
-      context: ../ai_engine
-      dockerfile: ../docker/ai-engine.Dockerfile
+      context: ./ai_engine
+      dockerfile: Dockerfile
     container_name: aiplatform-ai-engine
     ports:
       - "8001:8001"
@@ -68,12 +68,12 @@ services:
         condition: service_healthy
     # Hot-reload: mounts source so code changes apply without rebuilding the image.
     volumes:
-      - ../ai_engine:/app
+      - ./ai_engine:/app
 
   celery-worker:
     build:
-      context: ../ai_engine
-      dockerfile: ../docker/ai-engine.Dockerfile
+      context: ./ai_engine
+      dockerfile: Dockerfile
     container_name: aiplatform-celery-worker
     # Override the default CMD to start the Celery worker instead of uvicorn.
     command: celery -A app.tasks.workers.celery_app worker --loglevel=info
@@ -87,7 +87,7 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ../ai_engine:/app
+      - ./ai_engine:/app
 
   # -------------------------------------------------------------------------
   # Phase 6: Go orchestrator service

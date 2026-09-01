@@ -1,9 +1,27 @@
+from types import SimpleNamespace
+
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.services.log_response import create_log_response
 
 
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def celery_task(monkeypatch):
+    job_id = "550e8400-e29b-41d4-a716-446655440000"
+    task = SimpleNamespace(
+        id=job_id,
+        state="SUCCESS",
+        ready=lambda: True,
+        result=create_log_response("Traceback (most recent call last):\nAssertionError: boom"),
+    )
+    monkeypatch.setattr("app.main.analyze_log.delay", lambda raw_log: task)
+    monkeypatch.setattr("app.main.celery_app.AsyncResult", lambda requested_job_id: task)
+    return task
 
 
 def test_analyze_accepts_log_and_returns_job_id():

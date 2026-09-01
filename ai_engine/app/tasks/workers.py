@@ -24,6 +24,14 @@ celery_app.conf.update(
 )
 
 
+@celery_app.task(name="analyze_log")
+def analyze_log(raw_log: str) -> dict:
+    """Parse a CI log and store the sanitized response in the Redis backend."""
+    from app.services.log_response import create_log_response
+
+    return create_log_response(raw_log)
+
+
 # ---------------------------------------------------------------------------
 # Phase 5: Tasks
 #
