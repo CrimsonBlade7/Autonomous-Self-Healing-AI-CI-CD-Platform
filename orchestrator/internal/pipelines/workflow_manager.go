@@ -89,20 +89,28 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *docker
 					continue
 				}
 
-				if wfo.workflow.GetStatus() != "running" {
+				if !wfo.workflow.isRunning() {
 					slog.Info("Workflow is not running and cannot recieve new tasks", "wfid", t.Wfid)
 					continue
 				}
 
 				if t.Done {
-					wfo.workflow.jobs <- Job{
+					success := wfo.workflow.trySend(Job{
 						JobType: "commit_push",
 						Task:    t,
+					})
+					if !success {
+						slog.Error("Workflow is closed", "ID", t.Wfid)
+						continue
 					}
 				} else {
-					wfo.workflow.jobs <- Job{
+					success := wfo.workflow.trySend(Job{
 						JobType: "run_tests",
 						Task:    t,
+					})
+					if !success {
+						slog.Error("Workflow is closed", "ID", t.Wfid)
+						continue
 					}
 				}
 
@@ -133,10 +141,10 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		if pr.Action == "opened" {
 			panic(fmt.Sprintf("Duplicate workflow: %v", pr.Number))
 		}
-		if slices.Contains(runningActions, pr.Action) && wf.GetStatus() != "running" {
+		if slices.Contains(runningActions, pr.Action) && wf.isRunning() {
 			return fmt.Errorf("Workflow is not running: %v", wf.wfid)
 		}
-		if slices.Contains(stoppedActions, pr.Action) && wf.GetStatus() != "stopped" {
+		if slices.Contains(stoppedActions, pr.Action) && !wf.isRunning() {
 			return fmt.Errorf("Workflow is running: %v", wf.wfid)
 		}
 	} else if pr.Action != "opened" {
@@ -166,9 +174,12 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		slog.Info("Workflow repopened", "wfid", wfo.workflow.wfid)
 
 	case "edited":
-		wf.jobs <- Job{
+		success := wfo.workflow.trySend(Job{
 			JobType: "edit",
 			Task:    pr,
+		})
+		if !success {
+			return fmt.Errorf("Workflow %v is closed", wfo.workflow.wfid)
 		}
 		slog.Info("Pull request updated", "wfid", wfo.workflow.wfid)
 

@@ -19,22 +19,21 @@ import (
 )
 
 type Workflow struct {
-	wfid             int // The pr number
+	wfid             int // The pr number.
 	pullRequest      types.PullRequest
 	jobs             chan Job
-	path             string // Path to the associated workspace.
-	pathMutex        sync.RWMutex
-	cleanWs          func() error // Removes the workspace at path.
+	ws               Workspace
+	wsMutex          sync.RWMutex
 	attemptNum       int
 	currentTestsPath string
 	errorChannel     chan<- ErrorObject
+	done             chan struct{}
+}
 
-	// Can be one of:
-	// - "running": currently processing a pr
-	// - "stopped": temporarily paused
-	// Currently a string if new statuses are added.
-	status      string
-	statusMutex sync.RWMutex
+// Contains information associated with a particular workspace. Protected by a mutex.
+type Workspace struct {
+	path    string       // Path to the associated workspace.
+	cleanWs func() error // Removes the workspace at path.
 }
 
 type Job struct {
@@ -55,56 +54,64 @@ func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow
 		wfid:         pr.Number,
 		pullRequest:  pr,
 		jobs:         make(chan Job),
-		pathMutex:    sync.RWMutex{},
 		attemptNum:   0,
 		errorChannel: errChan,
-		status:       "stopped",
-		statusMutex:  sync.RWMutex{},
+		done:         make(chan struct{}),
 	}
-
 	return wf, nil
 }
 
 func (wf *Workflow) GetPath() string {
-	wf.pathMutex.RLock()
-	defer wf.pathMutex.RUnlock()
-	return wf.path
+	wf.wsMutex.RLock()
+	defer wf.wsMutex.RUnlock()
+	return wf.ws.path
 }
 
 func (wf *Workflow) SetPath(p string) {
-	wf.statusMutex.Lock()
-	defer wf.statusMutex.Unlock()
-	wf.path = p
+	wf.wsMutex.Lock()
+	defer wf.wsMutex.Unlock()
+	wf.ws.path = p
 }
 
-func (wf *Workflow) GetStatus() string {
-	wf.statusMutex.RLock()
-	defer wf.statusMutex.RUnlock()
-	return wf.path
+func (wf *Workflow) GetCleanWorkspace() func() error {
+	wf.wsMutex.RLock()
+	defer wf.wsMutex.RUnlock()
+	return wf.ws.cleanWs
 }
 
-func (wf *Workflow) SetRunning() {
-	wf.statusMutex.Lock()
-	defer wf.statusMutex.Unlock()
-	wf.status = "running"
+func (wf *Workflow) SetCleanWorkspace(cws func() error) {
+	wf.wsMutex.RLock()
+	defer wf.wsMutex.RUnlock()
+	wf.ws.cleanWs = cws
 }
 
-func (wf *Workflow) SetStopped() {
-	wf.statusMutex.Lock()
-	defer wf.statusMutex.Unlock()
-	wf.status = "stopped"
+func (wf *Workflow) trySend(job Job) (delivered bool) {
+	select {
+	case wf.jobs <- job:
+		return true
+	case <-wf.done:
+		return false // workflow has exited; job dropped, caller decides what to do
+	}
 }
 
+func (wf *Workflow) isRunning() bool {
+	select {
+	case <-wf.done:
+		return false
+	default:
+		return true
+	}
+}
 
 // Starts the job pipeline. Handles incoming jobs. Blocks until an error occurs.
 func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, pc *types.PushedCommits) {
-	wf.SetRunning()
-	for wf.status == "running" {
+	defer close(wf.done)
+	for {
 		select {
 		case <-ctx.Done():
-			wf.SetStopped()
-			if wf.cleanWs != nil {
-				if err := wf.cleanWs(); err != nil {
+			close(wf.done)
+			if wf.ws.cleanWs != nil {
+				if err := wf.ws.cleanWs(); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to clean up workspace: %w", err),
@@ -139,8 +146,10 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 					}
 					continue
 				}
-				wf.path = path
-				wf.cleanWs = clean
+				wf.ws = Workspace{
+					path: path,
+					cleanWs: clean,
+				}
 
 				if err = servertools.SendRequestAIEngine(ctx, "open", types.AIEngineRequest{
 					Wfid:        wf.wfid,
@@ -198,7 +207,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				}
 				wf.attemptNum++
 
-				if err := wstools.InsertTests(filepath.Join(wf.path, aier.TestName), aier.Tests); err != nil {
+				if err := wstools.InsertTests(filepath.Join(wf.ws.path, aier.TestName), aier.Tests); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to insert tests: %w", err),
@@ -207,7 +216,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				}
 				nameFormatter := strings.NewReplacer("/", "-", "|", "-", "<", "-", ">", "-", "\"", "-")
 				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullRequest.Branch, wf.wfid))
-				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.path, &dockertools.RealTarBuilder{})
+				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.ws.path, &dockertools.RealTarBuilder{})
 				if err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
@@ -257,7 +266,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				if !ok {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
-				if err := wstools.WriteSummary(filepath.Join(wf.path, "summary.md"), aier.Summary); err != nil {
+				if err := wstools.WriteSummary(filepath.Join(wf.ws.path, "summary.md"), aier.Summary); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to write summary: %w", err),
@@ -324,7 +333,7 @@ func processContainer(ctx context.Context, tag string, cli *dockerClient.Client)
 
 // Adds, commits, and pushes current workspace state to remote.
 func (wf *Workflow) SendUpdatesToRemote(cli wstools.GitClient) (newSha string, err error) {
-	newSha, err = cli.AddAllCommitPush("", wf.path, wf.pullRequest.Branch)
+	newSha, err = cli.AddAllCommitPush("", wf.ws.path, wf.pullRequest.Branch)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add, commit, and push changes: %w", err)
 	}

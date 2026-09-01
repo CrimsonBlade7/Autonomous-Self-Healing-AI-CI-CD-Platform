@@ -70,6 +70,7 @@ TODO List:
 		- log storage
 	- handle dead containers
 	- list testing and platform limitations and conditions; close platfrom if conditions are not met *
+	- look over wfm and wf for mistakes relating to done, status, and workspace
 
 Wishlist
 	- multi-service testing
