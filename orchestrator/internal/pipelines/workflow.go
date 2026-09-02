@@ -22,8 +22,8 @@ type Workflow struct {
 	wfid             int // The pr number.
 	pullRequest      types.PullRequest
 	jobs             chan Job
-	ws               Workspace
-	wsMutex          sync.RWMutex
+	workspace        Workspace
+	workspaceMutex   sync.RWMutex
 	attemptNum       int
 	currentTestsPath string
 	errorChannel     chan<- ErrorObject
@@ -32,8 +32,8 @@ type Workflow struct {
 
 // Contains information associated with a particular workspace. Protected by a mutex.
 type Workspace struct {
-	path    string       // Path to the associated workspace.
-	cleanWs func() error // Removes the workspace at path.
+	path            string       // Path to the associated workspace.
+	removeWorkspace func() error // Removes the workspace at path.
 }
 
 type Job struct {
@@ -44,13 +44,17 @@ type Job struct {
 	// - "run_tests"
 	// - "commit_push"
 	JobType string
-	Task    types.Task
+
+	// Only one of:
+
+	Aier        *types.AIEngineResponse
+	PullRequest *types.PullRequest
 }
 
 // Creates a new workflow. Path, cleanWs, and cancelWf function are are uninitialized by default.
 // Path and cleanup are initialized by the OPEN job.
-func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow, err error) {
-	wf = &Workflow{
+func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) *Workflow {
+	return &Workflow{
 		wfid:         pr.Number,
 		pullRequest:  pr,
 		jobs:         make(chan Job),
@@ -58,31 +62,30 @@ func newWorkflow(pr types.PullRequest, errChan chan<- ErrorObject) (wf *Workflow
 		errorChannel: errChan,
 		done:         make(chan struct{}),
 	}
-	return wf, nil
 }
 
 func (wf *Workflow) GetPath() string {
-	wf.wsMutex.RLock()
-	defer wf.wsMutex.RUnlock()
-	return wf.ws.path
+	wf.workspaceMutex.RLock()
+	defer wf.workspaceMutex.RUnlock()
+	return wf.workspace.path
 }
 
 func (wf *Workflow) SetPath(p string) {
-	wf.wsMutex.Lock()
-	defer wf.wsMutex.Unlock()
-	wf.ws.path = p
+	wf.workspaceMutex.Lock()
+	defer wf.workspaceMutex.Unlock()
+	wf.workspace.path = p
 }
 
 func (wf *Workflow) GetCleanWorkspace() func() error {
-	wf.wsMutex.RLock()
-	defer wf.wsMutex.RUnlock()
-	return wf.ws.cleanWs
+	wf.workspaceMutex.RLock()
+	defer wf.workspaceMutex.RUnlock()
+	return wf.workspace.removeWorkspace
 }
 
 func (wf *Workflow) SetCleanWorkspace(cws func() error) {
-	wf.wsMutex.RLock()
-	defer wf.wsMutex.RUnlock()
-	wf.ws.cleanWs = cws
+	wf.workspaceMutex.RLock()
+	defer wf.workspaceMutex.RUnlock()
+	wf.workspace.removeWorkspace = cws
 }
 
 func (wf *Workflow) trySend(job Job) (delivered bool) {
@@ -110,8 +113,8 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 		select {
 		case <-ctx.Done():
 			close(wf.done)
-			if wf.ws.cleanWs != nil {
-				if err := wf.ws.cleanWs(); err != nil {
+			if wf.workspace.removeWorkspace != nil {
+				if err := wf.workspace.removeWorkspace(); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to clean up workspace: %w", err),
@@ -146,9 +149,9 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 					}
 					continue
 				}
-				wf.ws = Workspace{
-					path: path,
-					cleanWs: clean,
+				wf.workspace = Workspace{
+					path:            path,
+					removeWorkspace: clean,
 				}
 
 				if err = servertools.SendRequestAIEngine(ctx, "open", types.AIEngineRequest{
@@ -164,12 +167,12 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 
 			case "edit", "sync":
 				wf.attemptNum = 0
-				pr, ok := job.Task.(types.PullRequest)
-				if !ok {
+				pr := job.PullRequest
+				if pr == nil {
 					panic("EDIT or SYNC should always come from a pull request.")
 				}
 
-				wf.pullRequest = pr
+				wf.pullRequest = *pr
 
 				// May be redundant, but exists just in case the types are relabled.
 				var jt string
@@ -181,7 +184,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 
 				if err := servertools.SendRequestAIEngine(ctx, jt, types.AIEngineRequest{
 					Wfid:        wf.wfid,
-					PullRequest: pr,
+					PullRequest: *pr,
 				}); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
@@ -191,11 +194,12 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				}
 
 			case "run_tests":
-				aier, ok := job.Task.(types.AIEngineResponse)
-				if !ok {
+				aier := job.Aier
+				if aier == nil {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
 				if aier.PullRequest != wf.pullRequest {
+					// Drop aier response if the pull requests do not match by value
 					continue
 				}
 				if wf.attemptNum > config.MaxTestPatchingAttempts {
@@ -207,7 +211,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				}
 				wf.attemptNum++
 
-				if err := wstools.InsertTests(filepath.Join(wf.ws.path, aier.TestName), aier.Tests); err != nil {
+				if err := wstools.InsertTests(filepath.Join(wf.workspace.path, aier.TestName), aier.Tests); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to insert tests: %w", err),
@@ -216,7 +220,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				}
 				nameFormatter := strings.NewReplacer("/", "-", "|", "-", "<", "-", ">", "-", "\"", "-")
 				wsName := nameFormatter.Replace(fmt.Sprintf("%s-%v", wf.pullRequest.Branch, wf.wfid))
-				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.ws.path, &dockertools.RealTarBuilder{})
+				tag, err := dockertools.BuildImage(ctx, cli, wsName, wf.pullRequest.HeadSHA, wf.workspace.path, &dockertools.RealTarBuilder{})
 				if err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
@@ -262,11 +266,11 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				}
 
 			case "commit_push":
-				aier, ok := job.Task.(types.AIEngineResponse)
-				if !ok {
+				aier := job.Aier
+				if aier == nil {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
-				if err := wstools.WriteSummary(filepath.Join(wf.ws.path, "summary.md"), aier.Summary); err != nil {
+				if err := wstools.WriteSummary(filepath.Join(wf.workspace.path, "summary.md"), aier.Summary); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to write summary: %w", err),
@@ -333,7 +337,7 @@ func processContainer(ctx context.Context, tag string, cli *dockerClient.Client)
 
 // Adds, commits, and pushes current workspace state to remote.
 func (wf *Workflow) SendUpdatesToRemote(cli wstools.GitClient) (newSha string, err error) {
-	newSha, err = cli.AddAllCommitPush("", wf.ws.path, wf.pullRequest.Branch)
+	newSha, err = cli.AddAllCommitPush("", wf.workspace.path, wf.pullRequest.Branch)
 	if err != nil {
 		return "", fmt.Errorf("Failed to add, commit, and push changes: %w", err)
 	}

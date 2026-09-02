@@ -19,7 +19,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
-	taskChannel := make(chan types.Task)
+	prChan := make(chan types.PullRequest)
+	aierChan := make(chan types.AIEngineResponse)
 	pcMap := types.NewPushedCommits()
 	wfm := pipelines.NewWorkflowManager()
 
@@ -50,9 +51,9 @@ func main() {
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pcMap)
+	go wfm.RunWorkflowPipeline(mainCtx, cli, prChan, aierChan, pcMap)
 
-	if err := servertools.StartServer(mainCtx, taskChannel, pcMap); err != nil {
+	if err := servertools.StartServer(mainCtx, prChan, aierChan, pcMap); err != nil {
 		slog.Error("Server failure", "error", err)
 		return
 	}

@@ -5,31 +5,6 @@ import (
 	"fmt"
 )
 
-// A Task can be one of:
-// - AIEngineResponse
-// - pullRequest
-type Task interface {
-	TaskType()
-}
-
-// The response from the AI Engine.
-// Response should come with a HMAC-Signature-256 header.
-// Contains the tests and the summary.
-type AIEngineResponse struct {
-	Wfid        int
-	PullRequest PullRequest
-	
-	// Tests are ignored if Done.
-	TestName string
-	Tests    []byte
-
-	// Done should always be accompanied by Summary.
-	Done        bool
-	Summary  string
-}
-
-func (aier AIEngineResponse) TaskType() {}
-
 type PullRequest struct {
 	Number  int    `json:"number"`
 	Action  string `json:"action"`
@@ -75,5 +50,3 @@ func (pr *PullRequest) UnmarshalPullRequest(data []byte) (err error) {
 
 	return nil
 }
-
-func (pr PullRequest) TaskType() {}
