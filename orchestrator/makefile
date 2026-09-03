@@ -37,9 +37,7 @@ clean:
 	$(GOCLEAN)
 	if exist $(BUILD_DIR) rmdir /s /q $(BUILD_DIR)
 
-run-windows:
-	clean
-	windows
+run-windows: clean windows
 	@echo Starting ngrok and app...
-	Start-Process ngrok -ArgumentList "http 8080"
-	$(BUILD_DIR)\$(BINARY_NAME)
+	powershell -Command "Start-Process ngrok -ArgumentList 'http 8080'"
+	$(BUILD_DIR)\$(BINARY_NAME).exe
