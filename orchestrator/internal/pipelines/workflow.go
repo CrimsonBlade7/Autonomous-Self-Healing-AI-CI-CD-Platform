@@ -83,8 +83,8 @@ func (wf *Workflow) GetCleanWorkspace() func() error {
 }
 
 func (wf *Workflow) SetCleanWorkspace(cws func() error) {
-	wf.workspaceMutex.RLock()
-	defer wf.workspaceMutex.RUnlock()
+	wf.workspaceMutex.Lock()
+	defer wf.workspaceMutex.Unlock()
 	wf.workspace.removeWorkspace = cws
 }
 
@@ -112,7 +112,6 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 	for {
 		select {
 		case <-ctx.Done():
-			close(wf.done)
 			if wf.workspace.removeWorkspace != nil {
 				if err := wf.workspace.removeWorkspace(); err != nil {
 					wf.errorChannel <- ErrorObject{
@@ -202,7 +201,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 					// Drop aier response if the pull requests do not match by value
 					continue
 				}
-				if wf.attemptNum > config.MaxTestPatchingAttempts {
+				if wf.attemptNum >= config.MaxTestPatchingAttempts {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Test generation failed: too many attempts"),
@@ -303,16 +302,15 @@ func processContainer(ctx context.Context, tag string, cli *dockerClient.Client)
 	}
 
 	// Close the logs and remove container
-	// err is updated before this IIFE returns
 	defer func() {
-		if err := logOut.Close(); err != nil {
-			err = fmt.Errorf("Failed to close out logs: %w", err)
+		if closeErr := logOut.Close(); closeErr != nil {
+			err = fmt.Errorf("Failed to close out logs: %w", closeErr)
 		}
-		if err := logErr.Close(); err != nil {
-			err = fmt.Errorf("Failed to close error logs: %w", err)
+		if closeErr := logErr.Close(); closeErr != nil {
+			err = errors.Join(err, fmt.Errorf("Failed to close error logs: %w", closeErr))
 		}
-		if err := dockertools.RemoveContainer(ctx, cli, contID); err != nil {
-			err = fmt.Errorf("Failed to remove container: %w", err)
+		if removeErr := dockertools.RemoveContainer(ctx, cli, contID); removeErr != nil {
+			err = errors.Join(err, fmt.Errorf("Failed to remove container: %w", removeErr))
 		}
 	}()
 

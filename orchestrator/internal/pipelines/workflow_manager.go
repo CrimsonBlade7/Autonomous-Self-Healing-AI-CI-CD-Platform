@@ -135,11 +135,11 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		if pr.Action == "opened" {
 			panic(fmt.Sprintf("Duplicate workflow: %v", pr.Number))
 		}
-		if slices.Contains(runningActions, pr.Action) && wf.isRunning() {
+		if slices.Contains(runningActions, pr.Action) && !wf.isRunning() {
 			return fmt.Errorf("Workflow is not running: %v", wf.wfid)
 		}
-		if slices.Contains(stoppedActions, pr.Action) && !wf.isRunning() {
-			return fmt.Errorf("Workflow is running: %v", wf.wfid)
+		if slices.Contains(stoppedActions, pr.Action) && wf.isRunning() {
+			return fmt.Errorf("Workflow is already running: %v", wf.wfid)
 		}
 	} else if pr.Action != "opened" {
 		panic(fmt.Sprintf("Workflow does not exist: %v\n Action: %s", pr.Number, pr.Action))
@@ -179,9 +179,12 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 			panic(fmt.Sprintf("Attempting to sync a workflow that does not exist: %v", num))
 		}
 
-		wf.jobs <- Job{
+		success := wfo.workflow.trySend(Job{
 			JobType:     "sync",
 			PullRequest: &pr,
+		})
+		if !success {
+			return fmt.Errorf("Workflow %v is closed", wfo.workflow.wfid)
 		}
 		slog.Info("Repository synchronized", "wfid", wfo.workflow.wfid)
 

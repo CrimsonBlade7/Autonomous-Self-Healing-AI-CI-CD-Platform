@@ -74,6 +74,7 @@ func InsertTests(path string, data []byte) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to create test file: %w", err)
 	}
+	defer file.Close()
 
 	if _, err := file.Write(data); err != nil {
 		return fmt.Errorf("Failed to write tests: %w", err)
@@ -88,6 +89,7 @@ func WriteSummary(path, text string) (err error) {
 	if err != nil {
 		return fmt.Errorf("Failed to create summary file: %w", err)
 	}
+	defer file.Close()
 
 	if _, err := file.Write([]byte(text)); err != nil {
 		return fmt.Errorf("Failed to write summary: %w", err)

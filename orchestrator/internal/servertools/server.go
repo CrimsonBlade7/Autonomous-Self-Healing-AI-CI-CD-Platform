@@ -133,11 +133,11 @@ func aiEngineResponseHandler(aierChan chan<- types.AIEngineResponse) http.Handle
 		}
 
 		actualSig := r.Header.Get("HMAC-Signature-256")
+		verified, err := verifyMessage(body, config.AIEngineSecret, actualSig)
 		if err != nil {
 			slog.Error("Failed to verify message", "error", err)
 			return
 		}
-		verified, err := verifyMessage(body, config.AIEngineSecret, actualSig)
 		if !verified {
 			w.WriteHeader(http.StatusUnauthorized)
 			slog.Warn("Unauthorized request", "warn", err)

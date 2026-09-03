@@ -13,8 +13,8 @@ type PushedCommits struct {
 // Checks if the sha exists at num.
 // Removes the sha if it exists.
 func (pc *PushedCommits) IsSelfPush(num int, sha string) bool {
-	pc.mutex.RLock()
-	defer pc.mutex.RUnlock()
+	pc.mutex.Lock()
+	defer pc.mutex.Unlock()
 
 	shas, prExists := pc.pushedCommits[num]
 	if !prExists {

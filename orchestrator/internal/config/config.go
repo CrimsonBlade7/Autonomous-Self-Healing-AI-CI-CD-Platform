@@ -63,7 +63,12 @@ func resolveRootDir() error {
 		if err != nil {
 			return fmt.Errorf("Failed to get working directory: %w", err)
 		}
-		RootDir = cwd
+		// go run from orchestrator/ should resolve to the monorepo root.
+		if filepath.Base(cwd) == "orchestrator" {
+			RootDir = filepath.Dir(cwd)
+		} else {
+			RootDir = cwd
+		}
 	} else {
 		RootDir = filepath.Dir(exePath)
 	}

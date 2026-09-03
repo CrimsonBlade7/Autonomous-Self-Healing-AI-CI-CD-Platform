@@ -16,6 +16,8 @@ import (
 
 type GithubClient struct{}
 
+const localBranch = "temp-branch"
+
 // Initializes the repository in the directory at path.
 func (c *GithubClient) InitRepo(ctx context.Context, path string, pr types.PullRequest) (err error) {
 	repo, err := git.PlainInit(path, false)
@@ -47,15 +49,15 @@ func (c *GithubClient) updateWorkspace(ctx context.Context, wsPath string, pr ty
 	err = repo.FetchContext(ctx, &git.FetchOptions{
 		RemoteURL:     config.RepositoryUrl,
 		ClientOptions: []gitPlumbingClient.Option{gitPlumbingClient.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
-		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/temp-branch", pr.Branch))},
+		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", pr.Branch, localBranch))},
 		Depth:         1,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return "", fmt.Errorf("Failed to fetch branch %s: %w", pr.Branch, err)
 	}
 
-	if err := checkoutBranch(repo, pr.Branch); err != nil {
-		return "", fmt.Errorf("Failed to checkout branch %s: %w", pr.Branch, err)
+	if err := checkoutBranch(repo, localBranch); err != nil {
+		return "", fmt.Errorf("Failed to checkout branch %s: %w", localBranch, err)
 	}
 
 	ref, err := repo.Head()
@@ -79,8 +81,8 @@ func (c *GithubClient) AddAllCommitPush(commitMsg, wsPath, branch string) (newSh
 		return "", fmt.Errorf("Failed to get worktree: %w", err)
 	}
 
-	if err := checkoutBranch(repo, branch); err != nil {
-		return "", fmt.Errorf("Failed to checkout branch %s: %w", branch, err)
+	if err := checkoutBranch(repo, localBranch); err != nil {
+		return "", fmt.Errorf("Failed to checkout branch %s: %w", localBranch, err)
 	}
 
 	hash, err := wt.Commit(commitMsg, &git.CommitOptions{All: true})
@@ -98,7 +100,7 @@ func (c *GithubClient) AddAllCommitPush(commitMsg, wsPath, branch string) (newSh
 		RemoteName:    "origin",
 		RemoteURL:     remote.Config().URLs[0],
 		ClientOptions: []gitPlumbingClient.Option{gitPlumbingClient.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
-		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/temp-branch:refs/heads/%s", branch))},
+		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", localBranch, branch))},
 		Force:         true,
 	}); err != nil {
 		return "", fmt.Errorf("Failed to push changes: %w", err)
