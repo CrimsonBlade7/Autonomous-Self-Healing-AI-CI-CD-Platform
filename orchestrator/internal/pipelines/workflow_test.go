@@ -7,7 +7,6 @@ import (
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
-	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/wstools"
 )
 
 type stubGit struct {
@@ -265,5 +264,3 @@ func TestHandlePullRequest_UnsupportedAction(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
-var _ wstools.GitClient = stubGit{}
