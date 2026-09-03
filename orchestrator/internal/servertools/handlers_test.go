@@ -1,0 +1,229 @@
+package servertools
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"testing"
+	"time"
+
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
+	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
+)
+
+func githubPayload() []byte {
+	return []byte(`{
+		"action": "opened",
+		"number": 11,
+		"pull_request": {
+			"title": "t",
+			"body": "b",
+			"head": {"ref": "feat", "sha": "aaa111"},
+			"base": {"sha": "bbb222"},
+			"merged": false
+		}
+	}`)
+}
+
+func TestWhHandler_AcceptsValidWebhook(t *testing.T) {
+	prev := config.GithubSecret
+	t.Cleanup(func() { config.GithubSecret = prev })
+	config.GithubSecret = "whsec"
+
+	body := githubPayload()
+	sig, err := generateHMAC(body, config.GithubSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	prChan := make(chan types.PullRequest, 1)
+	pc := types.NewPushedCommits()
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256="+sig)
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	rr := httptest.NewRecorder()
+
+	whHandler(prChan, pc)(rr, req)
+
+	select {
+	case pr := <-prChan:
+		if pr.Number != 11 || pr.Action != "opened" || pr.HeadSHA != "aaa111" {
+			t.Errorf("unexpected PR: %+v", pr)
+		}
+	default:
+		t.Fatal("expected pull request on channel")
+	}
+}
+
+func TestWhHandler_Unauthorized(t *testing.T) {
+	prev := config.GithubSecret
+	t.Cleanup(func() { config.GithubSecret = prev })
+	config.GithubSecret = "whsec"
+
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(githubPayload()))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256=00")
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	rr := httptest.NewRecorder()
+
+	whHandler(make(chan types.PullRequest, 1), types.NewPushedCommits())(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rr.Code)
+	}
+}
+
+func TestWhHandler_MethodNotAllowed(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rr := httptest.NewRecorder()
+	whHandler(make(chan types.PullRequest, 1), types.NewPushedCommits())(rr, req)
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("status = %d, want 405", rr.Code)
+	}
+}
+
+func TestWhHandler_IgnoresSelfPush(t *testing.T) {
+	prev := config.GithubSecret
+	t.Cleanup(func() { config.GithubSecret = prev })
+	config.GithubSecret = "whsec"
+
+	body := githubPayload()
+	sig, err := generateHMAC(body, config.GithubSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pc := types.NewPushedCommits()
+	pc.Add(11, "aaa111")
+	prChan := make(chan types.PullRequest, 1)
+
+	req := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hub-Signature-256", "sha256="+sig)
+	req.Header.Set("X-GitHub-Event", "pull_request")
+	rr := httptest.NewRecorder()
+	whHandler(prChan, pc)(rr, req)
+
+	select {
+	case <-prChan:
+		t.Fatal("self-push should not be forwarded")
+	default:
+	}
+}
+
+func TestAIEngineResponseHandler_AcceptsValidPayload(t *testing.T) {
+	prev := config.AIEngineSecret
+	t.Cleanup(func() { config.AIEngineSecret = prev })
+	config.AIEngineSecret = "aisec"
+
+	payload := types.AIEngineResponse{Wfid: 3, Done: true, Summary: "ok"}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := generateHMAC(body, config.AIEngineSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ch := make(chan types.AIEngineResponse, 1)
+	req := httptest.NewRequest(http.MethodPost, "/patch", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HMAC-Signature-256", sig)
+	rr := httptest.NewRecorder()
+	aiEngineResponseHandler(ch)(rr, req)
+
+	select {
+	case got := <-ch:
+		if got.Wfid != 3 || !got.Done || got.Summary != "ok" {
+			t.Errorf("got %+v", got)
+		}
+	default:
+		t.Fatal("expected AI engine response on channel")
+	}
+}
+
+func TestAIEngineResponseHandler_Unauthorized(t *testing.T) {
+	prev := config.AIEngineSecret
+	t.Cleanup(func() { config.AIEngineSecret = prev })
+	config.AIEngineSecret = "aisec"
+
+	req := httptest.NewRequest(http.MethodPost, "/patch", bytes.NewReader([]byte(`{"Wfid":1}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("HMAC-Signature-256", "nope")
+	rr := httptest.NewRecorder()
+	aiEngineResponseHandler(make(chan types.AIEngineResponse, 1))(rr, req)
+	if rr.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rr.Code)
+	}
+}
+
+func TestSendRequestAIEngine_InvalidJobType(t *testing.T) {
+	err := SendRequestAIEngine(context.Background(), "not-a-job", types.AIEngineRequest{Wfid: 1})
+	if err == nil {
+		t.Fatal("expected invalid job type error")
+	}
+}
+
+func TestSendRequestAIEngine_SuccessAndBadStatus(t *testing.T) {
+	prevPort, prevSecret, prevTimeout := config.AIEnginePort, config.AIEngineSecret, config.AiEngineRequestTimeout
+	t.Cleanup(func() {
+		config.AIEnginePort = prevPort
+		config.AIEngineSecret = prevSecret
+		config.AiEngineRequestTimeout = prevTimeout
+	})
+	config.AIEngineSecret = "aisec"
+	config.AiEngineRequestTimeout = 2
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Job-Type") != "open" {
+			t.Errorf("Job-Type = %q", r.Header.Get("Job-Type"))
+		}
+		if r.Header.Get("HMAC-Signature-256") == "" {
+			t.Error("missing HMAC header")
+		}
+		body, _ := io.ReadAll(r.Body)
+		var req types.AIEngineRequest
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("body: %v", err)
+		}
+		if req.Wfid != 9 {
+			t.Errorf("Wfid = %d", req.Wfid)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	u, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.AIEnginePort = u.Port()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := SendRequestAIEngine(ctx, "open", types.AIEngineRequest{Wfid: 9}); err != nil {
+		t.Fatalf("SendRequestAIEngine: %v", err)
+	}
+
+	muxBad := http.NewServeMux()
+	muxBad.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+	bad := httptest.NewServer(muxBad)
+	t.Cleanup(bad.Close)
+	u, err = url.Parse(bad.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.AIEnginePort = u.Port()
+	if err := SendRequestAIEngine(ctx, "logs", types.AIEngineRequest{Wfid: 9}); err == nil {
+		t.Fatal("expected error for non-200 response")
+	}
+}
