@@ -37,42 +37,51 @@ const (
 	KB   int = 1e3 * BYTE
 	MB   int = 1e3 * KB
 	GB   int = 1e3 * MB
+	
+	// The file used to identify the monorepo root when walking up from cwd.
+	rootMarkerFile = "README.md"
 )
+
 
 // Sets the root directory.
 func resolveRootDir() error {
-	// Use env variable for the project root if it exists.
+	// Use env variable for the project root if it exists. Useful for
+	// containers/CI where the marker-based walk isn't desired or possible.
 	if root := os.Getenv("PROJECT_ROOT"); root != "" {
 		RootDir = root
 		return nil
 	}
 
-	exePath, err := os.Executable()
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("Failed to get executable path: %w", err)
+		return fmt.Errorf("Failed to get working directory: %w", err)
 	}
 
-	if exePath, err = filepath.EvalSymlinks(exePath); err != nil {
-		return fmt.Errorf("Failed to resolve symlinks: %w", err)
+	root, err := findRepoRoot(cwd, rootMarkerFile)
+	if err != nil {
+		return fmt.Errorf("Failed to locate monorepo root (looked for %s above %s): %w", rootMarkerFile, cwd, err)
 	}
 
-	// If the executable is in the current working directory, use the current working directory.
-	// Otherwise, default to the folder containing the binary.
-	if strings.Contains(exePath, os.TempDir()) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("Failed to get working directory: %w", err)
-		}
-		// go run from orchestrator/ should resolve to the monorepo root.
-		if filepath.Base(cwd) == "orchestrator" {
-			RootDir = filepath.Dir(cwd)
-		} else {
-			RootDir = cwd
-		}
-	} else {
-		RootDir = filepath.Dir(exePath)
-	}
+	RootDir = root
 	return nil
+}
+
+// Walks up from startDir looking for a directory containing marker.
+// Returns an error if it reaches the filesystem root without finding it.
+func findRepoRoot(startDir, marker string) (string, error) {
+	dir := startDir
+	for {
+		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+			return dir, nil
+		}
+
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root without finding the marker.
+			return "", fmt.Errorf("marker file %q not found in any parent of %s", marker, startDir)
+		}
+		dir = parent
+	}
 }
 
 // Loads the environment variables to be injected into the docker container for testing.

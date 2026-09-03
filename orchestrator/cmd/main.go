@@ -41,6 +41,11 @@ func main() {
 		}
 	}()
 
+	if _, err := cli.Ping(mainCtx, dockerClient.PingOptions{}); err != nil {
+		slog.Error("Docker daemon unreachable", "error", err)
+		return
+	}
+
 	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
 		slog.Error("Failed to clean old containers", "error", err)
 		return
