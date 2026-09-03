@@ -14,21 +14,22 @@ import (
 var (
 	WsDir string
 
-	RootDir                 string
-	Port                    string = "8080"
-	GithubToken             string
-	RepositoryUrl           string
-	GithubSecret            string
-	AIEngineSecret          string
-	AIEnginePort            string = "8000"
-	TestingEnvSlice         []string
-	AiEngineRequestTimeout  int = 5
-	ServerShutdownTimeout   int = 30
-	ReadHeaderTimeout       int = 2
-	WriteTimeout            int = 5
-	MaxTestPatchingAttempts int = 10
-	ContainerTimeout        int = 10     // in minutes
-	ContainerMemoryCap      int = 2 * GB // in bytes
+	RootDir                     string
+	Port                        string = "8080"
+	GithubToken                 string
+	RepositoryUrl               string
+	GithubSecret                string
+	AIEngineSecret              string
+	AIEnginePort                string = "8000"
+	TestingEnvSlice             []string
+	AiEngineRequestTimeout      int = 5   // seconds
+	ServerShutdownTimeout       int = 30  // seconds
+	ReadHeaderTimeout           int = 2   // seconds
+	WriteTimeout                int = 5   // seconds
+	ContainerTimeout            int = 10  // minutes
+	AIEngineRequestCloseTimeout int = 10  // seconds
+	ContainerMemoryCap          int = 512 // MB
+	MaxTestPatchingAttempts     int = 10
 )
 
 const (
@@ -62,7 +63,12 @@ func resolveRootDir() error {
 		if err != nil {
 			return fmt.Errorf("Failed to get working directory: %w", err)
 		}
-		RootDir = cwd
+		// go run from orchestrator/ should resolve to the monorepo root.
+		if filepath.Base(cwd) == "orchestrator" {
+			RootDir = filepath.Dir(cwd)
+		} else {
+			RootDir = cwd
+		}
 	} else {
 		RootDir = filepath.Dir(exePath)
 	}

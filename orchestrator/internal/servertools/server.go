@@ -47,7 +47,7 @@ func seconds(n int) time.Duration {
 }
 
 // Github webhook handler
-func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.HandlerFunc {
+func whHandler(prChan chan<- types.PullRequest, pc *types.PushedCommits) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			closeErr := r.Body.Close()
@@ -65,6 +65,11 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			slog.Error("Not a post request", "error", err)
+			return
+		}
+
+		if r.Header.Get("Content-Type") != "application/json" {
+			slog.Error("Webhook body must be JSON")
 			return
 		}
 
@@ -97,13 +102,13 @@ func whHandler(taskChannel chan<- types.Task, pc *types.PushedCommits) http.Hand
 		}
 
 		slog.Info("Webhook recieved", "pull request", pr)
-		taskChannel <- &pr
+		prChan <- pr
 
 	}
 }
 
 // Handles responses from the AI Engine and sends response to respChannel.
-func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
+func aiEngineResponseHandler(aierChan chan<- types.AIEngineResponse) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if closeErr := r.Body.Close(); closeErr != nil {
@@ -122,12 +127,17 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 			return
 		}
 
+		if r.Header.Get("Content-Type") != "application/json" {
+			slog.Error("Webhook body must be JSON")
+			return
+		}
+
 		actualSig := r.Header.Get("HMAC-Signature-256")
+		verified, err := verifyMessage(body, config.AIEngineSecret, actualSig)
 		if err != nil {
 			slog.Error("Failed to verify message", "error", err)
 			return
 		}
-		verified, err := verifyMessage(body, config.AIEngineSecret, actualSig)
 		if !verified {
 			w.WriteHeader(http.StatusUnauthorized)
 			slog.Warn("Unauthorized request", "warn", err)
@@ -141,7 +151,7 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 			return
 		}
 
-		taskChannel <- &resp
+		aierChan <- resp
 	}
 }
 
@@ -151,7 +161,7 @@ func aiEngineResponseHandler(taskChannel chan<- types.Task) http.HandlerFunc {
 // close: Close and merge implied; end associated workflow and update rag index.
 // logs: Return the logs of the last test run.
 // edit: Update pr information.
-// sync: update branch head
+// sync: Update branch head
 func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngineRequest) (err error) {
 	validJobTypes := []string{
 		"open",
@@ -179,7 +189,12 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 		return fmt.Errorf("Failed to create http request: %w", err)
 	}
 
-	httpReq.Header.Set("Accept", "application/json")
+	hmacSig, err := generateHMAC(msgBytes, config.AIEngineSecret)
+	if err != nil {
+		return fmt.Errorf("Failed to generate HMAC: %w", err)
+	}
+	httpReq.Header.Set("HMAC-Signature-256", hmacSig)
+	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Job-Type", jobType)
 
 	resp, err := cli.Do(httpReq)
@@ -198,12 +213,12 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 }
 
 // Starts the http server.
-func StartServer(ctx context.Context, taskChannel chan<- types.Task, pc *types.PushedCommits) (err error) {
+func StartServer(ctx context.Context, prChan chan<- types.PullRequest, aierChan chan<- types.AIEngineResponse, pc *types.PushedCommits) (err error) {
 
 	// initialize server
 	mux := http.NewServeMux()
-	mux.Handle("/", http.HandlerFunc(whHandler(taskChannel, pc)))
-	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(taskChannel)))
+	mux.Handle("/", http.HandlerFunc(whHandler(prChan, pc)))
+	mux.Handle("/patch", http.HandlerFunc(aiEngineResponseHandler(aierChan)))
 
 	port := fmt.Sprintf(":%s", config.Port)
 	server := &http.Server{

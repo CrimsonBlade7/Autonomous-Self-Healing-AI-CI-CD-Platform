@@ -7,7 +7,6 @@ import (
 // The request sent to the AI Engine.
 // Request should come with a HMAC-Signature-256.
 // Contains the pull request and the logs.
-// The pull request and the test results are mutually exclusive.
 type AIEngineRequest struct {
 	Wfid int // Mandatory
 

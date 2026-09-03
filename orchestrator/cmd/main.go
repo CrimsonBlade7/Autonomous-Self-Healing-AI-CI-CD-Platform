@@ -19,7 +19,8 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
-	taskChannel := make(chan types.Task)
+	prChan := make(chan types.PullRequest)
+	aierChan := make(chan types.AIEngineResponse)
 	pcMap := types.NewPushedCommits()
 	wfm := pipelines.NewWorkflowManager()
 
@@ -40,19 +41,19 @@ func main() {
 		}
 	}()
 
-	if err := dockertools.ClearOldImages(mainCtx, cli); err != nil {
-		slog.Error("Failed to clean old images", "error", err)
-		return
-	}
-
 	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
 		slog.Error("Failed to clean old containers", "error", err)
 		return
 	}
 
-	go wfm.RunWorkflowPipeline(mainCtx, cli, taskChannel, pcMap)
+	if err := dockertools.ClearOldImages(mainCtx, cli); err != nil {
+		slog.Error("Failed to clean old images", "error", err)
+		return
+	}
 
-	if err := servertools.StartServer(mainCtx, taskChannel, pcMap); err != nil {
+	go wfm.RunWorkflowPipeline(mainCtx, cli, prChan, aierChan, pcMap)
+
+	if err := servertools.StartServer(mainCtx, prChan, aierChan, pcMap); err != nil {
 		slog.Error("Server failure", "error", err)
 		return
 	}
@@ -69,6 +70,7 @@ TODO List:
 		- workflows
 		- log storage
 	- handle dead containers
+	- list testing and platform limitations and conditions; close platfrom if conditions are not met *
 
 Wishlist
 	- multi-service testing

@@ -61,7 +61,7 @@ func (wfm *WorkflowManager) Remove(id int) {
 }
 
 // Starts the run pipeline. Handles incoming workflows.
-func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *dockerClient.Client, taskChannel <-chan types.Task, pc *types.PushedCommits) {
+func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *dockerClient.Client, prChan <-chan types.PullRequest, aierChan <-chan types.AIEngineResponse, pc *types.PushedCommits) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -70,55 +70,55 @@ func (wfm *WorkflowManager) RunWorkflowPipeline(ctx context.Context, cli *docker
 		case errObject := <-wfm.wfErrChan:
 			slog.Error("Workflow failed", "wfid", errObject.wfid, "error", errObject.err)
 			wf, exists := wfm.Get(errObject.wfid)
-			if !exists {
-				panic(fmt.Sprintf("Workflow doesn't exist: %v", errObject.wfid))
+			if exists {
+				wf.cancel()
+				wfm.Remove(errObject.wfid)
 			}
-			wf.cancel()
-			wfm.Remove(errObject.wfid)
 
-		case task := <-taskChannel:
-			switch t := task.(type) {
-			case types.PullRequest:
-				if err := wfm.handlePullRequest(ctx, cli, t); err != nil {
-					slog.Error("Failed to handle pull request", "error", err)
-				}
+		case pr := <-prChan:
+			if err := wfm.handlePullRequest(ctx, cli, pr, pc); err != nil {
+				slog.Error("Failed to handle pull request", "error", err)
+			}
 
-			case types.AIEngineResponse:
-				wfo, exists := wfm.Get(t.Wfid)
-				if !exists {
-					slog.Error("Workflow ID does not exist", "ID", t.Wfid)
+		case aier := <-aierChan:
+			wfo, exists := wfm.Get(aier.Wfid)
+			if !exists {
+				slog.Error("Workflow ID does not exist", "ID", aier.Wfid)
+				continue
+			}
+
+			if !wfo.workflow.isRunning() {
+				slog.Info("Workflow is not running and cannot recieve new tasks", "wfid", aier.Wfid)
+				continue
+			}
+
+			if aier.Done {
+				success := wfo.workflow.trySend(Job{
+					JobType: "commit_push",
+					Aier:    &aier,
+				})
+				if !success {
+					slog.Error("Workflow is closed", "ID", aier.Wfid)
 					continue
 				}
-
-				if wfo.workflow.status != "running" {
-					slog.Info("Workflow is not running and cannot recieve new tasks", "wfid", t.Wfid)
+			} else {
+				success := wfo.workflow.trySend(Job{
+					JobType: "run_tests",
+					Aier:    &aier,
+				})
+				if !success {
+					slog.Error("Workflow is closed", "ID", aier.Wfid)
 					continue
 				}
-
-				if t.Done {
-					wfo.workflow.jobs <- Job{
-						JobType: "commit_push",
-						Task:    t,
-					}
-					pc.Add(t.PullRequest.Number, t.PullRequest.HeadSHA)
-				} else {
-					wfo.workflow.jobs <- Job{
-						JobType: "run_tests",
-						Task:    t,
-					}
-				}
-
-			default:
-				panic(fmt.Sprintf("Unsupported task: %T", t))
 			}
 		}
 	}
 }
 
-func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest) (err error) {
+func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest, pc *types.PushedCommits) (err error) {
 	num := pr.Number
 	wfo, exists := wfm.Get(num)
-	wf := wfo.workflow
+	var wf *Workflow
 
 	runningActions := []string{
 		"closed",
@@ -131,14 +131,15 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 	}
 
 	if exists {
+		wf = wfo.workflow
 		if pr.Action == "opened" {
 			panic(fmt.Sprintf("Duplicate workflow: %v", pr.Number))
 		}
-		if slices.Contains(runningActions, pr.Action) && wf.status != "running" {
+		if slices.Contains(runningActions, pr.Action) && !wf.isRunning() {
 			return fmt.Errorf("Workflow is not running: %v", wf.wfid)
 		}
-		if slices.Contains(stoppedActions, pr.Action) && wf.status != "stopped" {
-			return fmt.Errorf("Workflow is running: %v", wf.wfid)
+		if slices.Contains(stoppedActions, pr.Action) && wf.isRunning() {
+			return fmt.Errorf("Workflow is already running: %v", wf.wfid)
 		}
 	} else if pr.Action != "opened" {
 		panic(fmt.Sprintf("Workflow does not exist: %v\n Action: %s", pr.Number, pr.Action))
@@ -147,12 +148,9 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 	switch pr.Action {
 	case "opened":
 		// Creates and starts a new workflow for a new pr
-		nwf, err := newWorkflow(pr, wfm.wfErrChan)
-		if err != nil {
-			return fmt.Errorf("Failed to create a new workflow: %w", err)
-		}
-		wfm.openPr(ctx, cli, pr, nwf)
-		slog.Info("New workflow started", "wfid", nwf.wfid)
+		wf := newWorkflow(pr, wfm.wfErrChan)
+		wfm.openPr(ctx, cli, pr, wf, pc)
+		slog.Info("New workflow started", "wfid", wf.wfid)
 
 	case "closed":
 		wfo.cancel()
@@ -163,13 +161,16 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 		slog.Info("Workflow stopped", "wfid", wf.wfid)
 
 	case "reopened":
-		wfm.openPr(ctx, cli, pr, wf)
+		wfm.openPr(ctx, cli, pr, wf, pc)
 		slog.Info("Workflow repopened", "wfid", wfo.workflow.wfid)
 
 	case "edited":
-		wf.jobs <- Job{
-			JobType: "edit",
-			Task:    pr,
+		success := wfo.workflow.trySend(Job{
+			JobType:     "edit",
+			PullRequest: &pr,
+		})
+		if !success {
+			return fmt.Errorf("Workflow %v is closed", wfo.workflow.wfid)
 		}
 		slog.Info("Pull request updated", "wfid", wfo.workflow.wfid)
 
@@ -178,9 +179,12 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 			panic(fmt.Sprintf("Attempting to sync a workflow that does not exist: %v", num))
 		}
 
-		wf.jobs <- Job{
-			JobType: "sync",
-			Task:    pr,
+		success := wfo.workflow.trySend(Job{
+			JobType:     "sync",
+			PullRequest: &pr,
+		})
+		if !success {
+			return fmt.Errorf("Workflow %v is closed", wfo.workflow.wfid)
 		}
 		slog.Info("Repository synchronized", "wfid", wfo.workflow.wfid)
 
@@ -191,7 +195,7 @@ func (wfm *WorkflowManager) handlePullRequest(ctx context.Context, cli *dockerCl
 }
 
 // Starts a workflow on pr.
-func (wfm *WorkflowManager) openPr(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest, wf *Workflow) {
+func (wfm *WorkflowManager) openPr(ctx context.Context, cli *dockerClient.Client, pr types.PullRequest, wf *Workflow, pc *types.PushedCommits) {
 	subCtx, end := context.WithCancel(ctx)
 	wfm.Set(pr.Number, WorkflowObject{
 		workflow: wf,
@@ -199,10 +203,10 @@ func (wfm *WorkflowManager) openPr(ctx context.Context, cli *dockerClient.Client
 	})
 	go func(ctx context.Context, cli *dockerClient.Client) {
 		defer end()
-		wf.runWorkflow(subCtx, cli)
+		wf.runWorkflow(subCtx, cli, pc)
 	}(subCtx, cli)
 	wf.jobs <- Job{
-		JobType: "open",
-		Task:    wf.pullRequest,
+		JobType:     "open",
+		PullRequest: &wf.pullRequest,
 	}
 }

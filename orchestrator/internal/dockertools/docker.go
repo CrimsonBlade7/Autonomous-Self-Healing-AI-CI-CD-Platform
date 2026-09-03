@@ -163,6 +163,7 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 	logs, err := cm.ContainerLogs(ctx, id, dockerClient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
+		Follow:     true,
 	})
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("Failed to create a container logger: %w", err)
