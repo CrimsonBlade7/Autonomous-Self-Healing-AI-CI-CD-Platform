@@ -46,6 +46,29 @@ type TarBuilder interface {
 
 var ImageBuildErr error = errors.New("Image build failed")
 
+func WaitForDocker(ctx context.Context, cli *dockerClient.Client, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	backoff := 500 * time.Millisecond
+
+	for {
+		pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		_, err := cli.Ping(pingCtx, dockerClient.PingOptions{})
+		cancel()
+		if err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("docker daemon not reachable after %s: %w", timeout, err)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, 5*time.Second)
+	}
+}
+
 // Removes up old images
 func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 	images, err := im.ImageList(ctx, dockerClient.ImageListOptions{All: true})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/dockertools"
@@ -41,7 +42,7 @@ func main() {
 		}
 	}()
 
-	if _, err := cli.Ping(mainCtx, dockerClient.PingOptions{}); err != nil {
+	if err := dockertools.WaitForDocker(mainCtx, cli, 10*time.Second); err != nil {
 		slog.Error("Docker daemon unreachable", "error", err)
 		return
 	}

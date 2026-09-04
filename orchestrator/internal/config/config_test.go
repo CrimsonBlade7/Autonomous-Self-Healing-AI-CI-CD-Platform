@@ -8,10 +8,10 @@ import (
 )
 
 func TestRelToAbsPath(t *testing.T) {
-	prev := RootDir
-	t.Cleanup(func() { RootDir = prev })
+	prev := OrchRootDir
+	t.Cleanup(func() { OrchRootDir = prev })
 
-	RootDir = filepath.FromSlash("/repo")
+	OrchRootDir = filepath.FromSlash("/repo")
 	got := RelToAbsPath("orchestrator", ".env")
 	want := filepath.Join("/repo", "orchestrator", ".env")
 	if got != want {
@@ -59,9 +59,9 @@ func TestValidateConfig_OK(t *testing.T) {
 }
 
 func TestResolveRootDir_UsesProjectRootEnv(t *testing.T) {
-	prev := RootDir
+	prev := OrchRootDir
 	t.Cleanup(func() {
-		RootDir = prev
+		OrchRootDir = prev
 		_ = os.Unsetenv("PROJECT_ROOT")
 	})
 
@@ -71,15 +71,15 @@ func TestResolveRootDir_UsesProjectRootEnv(t *testing.T) {
 	if err := resolveRootDir(); err != nil {
 		t.Fatalf("resolveRootDir: %v", err)
 	}
-	if RootDir != want {
-		t.Errorf("RootDir = %q, want %q", RootDir, want)
+	if OrchRootDir != want {
+		t.Errorf("RootDir = %q, want %q", OrchRootDir, want)
 	}
 }
 
 func TestLoadTestingEnvVars(t *testing.T) {
-	prevRoot, prevSlice := RootDir, TestingEnvSlice
+	prevRoot, prevSlice := OrchRootDir, TestingEnvSlice
 	t.Cleanup(func() {
-		RootDir = prevRoot
+		OrchRootDir = prevRoot
 		TestingEnvSlice = prevSlice
 	})
 
@@ -93,7 +93,7 @@ func TestLoadTestingEnvVars(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	RootDir = root
+	OrchRootDir = root
 	TestingEnvSlice = nil
 	if err := loadTestingEnvVars(); err != nil {
 		t.Fatalf("loadTestingEnvVars: %v", err)
@@ -113,7 +113,7 @@ func TestFindRepoRoot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got, err := findRepoRoot(nested, "docker-compose.yml")
+	got, err := findOrchRoot(nested, "docker-compose.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestFindRepoRoot(t *testing.T) {
 
 func TestFindRepoRoot_NotFound(t *testing.T) {
 	dir := t.TempDir()
-	if _, err := findRepoRoot(dir, "docker-compose.yml"); err == nil {
+	if _, err := findOrchRoot(dir, "docker-compose.yml"); err == nil {
 		t.Fatal("expected error when marker is absent")
 	}
 }

@@ -14,7 +14,7 @@ import (
 var (
 	WsDir string
 
-	RootDir                     string
+	OrchRootDir                 string
 	Port                        string = "8080"
 	GithubToken                 string
 	RepositoryUrl               string
@@ -37,18 +37,17 @@ const (
 	KB   int = 1e3 * BYTE
 	MB   int = 1e3 * KB
 	GB   int = 1e3 * MB
-	
-	// The file used to identify the monorepo root when walking up from cwd.
-	rootMarkerFile = "README.md"
-)
 
+	// The file used to identify the orchestrator root when walking up from cwd.
+	rootMarkerFile = "go.mod"
+)
 
 // Sets the root directory.
 func resolveRootDir() error {
 	// Use env variable for the project root if it exists. Useful for
 	// containers/CI where the marker-based walk isn't desired or possible.
-	if root := os.Getenv("PROJECT_ROOT"); root != "" {
-		RootDir = root
+	if root := os.Getenv("ORCHESTRATOR_ROOT"); root != "" {
+		OrchRootDir = root
 		return nil
 	}
 
@@ -57,18 +56,18 @@ func resolveRootDir() error {
 		return fmt.Errorf("Failed to get working directory: %w", err)
 	}
 
-	root, err := findRepoRoot(cwd, rootMarkerFile)
+	root, err := findOrchRoot(cwd, rootMarkerFile)
 	if err != nil {
 		return fmt.Errorf("Failed to locate monorepo root (looked for %s above %s): %w", rootMarkerFile, cwd, err)
 	}
 
-	RootDir = root
+	OrchRootDir = root
 	return nil
 }
 
 // Walks up from startDir looking for a directory containing marker.
 // Returns an error if it reaches the filesystem root without finding it.
-func findRepoRoot(startDir, marker string) (string, error) {
+func findOrchRoot(startDir, marker string) (string, error) {
 	dir := startDir
 	for {
 		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
@@ -78,7 +77,7 @@ func findRepoRoot(startDir, marker string) (string, error) {
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			// Reached filesystem root without finding the marker.
-			return "", fmt.Errorf("marker file %q not found in any parent of %s", marker, startDir)
+			return "", fmt.Errorf("Marker file %q not found in any parent of %s", marker, startDir)
 		}
 		dir = parent
 	}
@@ -87,7 +86,7 @@ func findRepoRoot(startDir, marker string) (string, error) {
 // Loads the environment variables to be injected into the docker container for testing.
 func loadTestingEnvVars() error {
 	// Target the nested config directory
-	envPath := RelToAbsPath("orchestrator", "config", "test-env-vars.txt")
+	envPath := RelToAbsPath("config", "test-env-vars.txt")
 
 	testEnvFile, err := os.Open(envPath)
 	if err != nil {
@@ -113,7 +112,7 @@ func loadTestingEnvVars() error {
 // Loads the environment variables.
 func loadEnv() error {
 	// Root level .env file
-	envPath := RelToAbsPath("orchestrator", ".env")
+	envPath := RelToAbsPath(".env")
 	if err := godotenv.Load(envPath); err != nil {
 		// Non-fatal if running in environments where variables are injected directly (e.g., Docker/K8s)
 		if !os.IsNotExist(err) {
@@ -239,5 +238,5 @@ func Init() error {
 
 // Joins and prefixes the root to create the absolute path.
 func RelToAbsPath(relPath ...string) string {
-	return filepath.Join(append([]string{RootDir}, relPath...)...)
+	return filepath.Join(append([]string{OrchRootDir}, relPath...)...)
 }
