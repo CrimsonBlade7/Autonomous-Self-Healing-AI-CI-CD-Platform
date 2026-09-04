@@ -62,11 +62,11 @@ func TestResolveRootDir_UsesProjectRootEnv(t *testing.T) {
 	prev := OrchRootDir
 	t.Cleanup(func() {
 		OrchRootDir = prev
-		_ = os.Unsetenv("PROJECT_ROOT")
+		_ = os.Unsetenv("ORCHESTRATOR_ROOT")
 	})
 
 	want := filepath.Join(t.TempDir(), "root")
-	t.Setenv("PROJECT_ROOT", want)
+	t.Setenv("ORCHESTRATOR_ROOT", want)
 
 	if err := resolveRootDir(); err != nil {
 		t.Fatalf("resolveRootDir: %v", err)
@@ -84,7 +84,7 @@ func TestLoadTestingEnvVars(t *testing.T) {
 	})
 
 	root := t.TempDir()
-	cfgDir := filepath.Join(root, "orchestrator", "config")
+	cfgDir := filepath.Join(root, "config")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
