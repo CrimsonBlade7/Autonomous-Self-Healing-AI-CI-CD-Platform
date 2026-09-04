@@ -1,12 +1,12 @@
 module github.com/benl1006/Autonomous-CI-Platform/orchestrator
 
-go 1.26.4
+go 1.27.0
 
 require (
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
 	github.com/joho/godotenv v1.5.1
-	github.com/moby/moby/api v1.55.0
-	github.com/moby/moby/client v0.5.1
+	github.com/moby/moby/api v1.56.0
+	github.com/moby/moby/client v0.6.0
 )
 
 require (
@@ -37,7 +37,7 @@ require (
 	go.opentelemetry.io/otel v1.46.0 // indirect
 	go.opentelemetry.io/otel/metric v1.46.0 // indirect
 	go.opentelemetry.io/otel/trace v1.46.0 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.56.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
