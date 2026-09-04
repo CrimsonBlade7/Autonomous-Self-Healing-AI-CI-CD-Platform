@@ -42,7 +42,7 @@ func main() {
 		}
 	}()
 
-	if err := dockertools.WaitForDocker(mainCtx, cli, 10*time.Second); err != nil {
+	if err := dockertools.WaitForDocker(mainCtx, cli, time.Duration(config.DockerStartTimeout)*time.Second); err != nil {
 		slog.Error("Docker daemon unreachable", "error", err)
 		return
 	}

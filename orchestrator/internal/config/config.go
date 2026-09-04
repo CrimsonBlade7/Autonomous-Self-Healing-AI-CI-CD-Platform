@@ -21,15 +21,16 @@ var (
 	GithubSecret                string
 	AIEngineSecret              string
 	AIEnginePort                string = "8000"
+	AiEngineRequestTimeout      int    = 5   // seconds
+	ServerShutdownTimeout       int    = 30  // seconds
+	ReadHeaderTimeout           int    = 2   // seconds
+	WriteTimeout                int    = 5   // seconds
+	ContainerTimeout            int    = 10  // minutes
+	AIEngineRequestCloseTimeout int    = 10  // seconds
+	DockerStartTimeout          int    = 10  // seconds
+	ContainerMemoryCap          int    = 512 // MB
+	MaxTestPatchingAttempts     int    = 10
 	TestingEnvSlice             []string
-	AiEngineRequestTimeout      int = 5   // seconds
-	ServerShutdownTimeout       int = 30  // seconds
-	ReadHeaderTimeout           int = 2   // seconds
-	WriteTimeout                int = 5   // seconds
-	ContainerTimeout            int = 10  // minutes
-	AIEngineRequestCloseTimeout int = 10  // seconds
-	ContainerMemoryCap          int = 512 // MB
-	MaxTestPatchingAttempts     int = 10
 )
 
 const (
@@ -37,9 +38,6 @@ const (
 	KB   int = 1e3 * BYTE
 	MB   int = 1e3 * KB
 	GB   int = 1e3 * MB
-
-	// The file used to identify the orchestrator root when walking up from cwd.
-	rootMarkerFile = "app"
 )
 
 // Sets the root directory.
@@ -150,10 +148,10 @@ func loadEnv() error {
 		}
 	}
 
-	if valMaxTestAttempts := os.Getenv("MAX_TEST_PATCHING_ATTEMPTS"); valMaxTestAttempts != "" {
-		parsedVal, err := strconv.Atoi(valMaxTestAttempts)
+	if valAiTimeout := os.Getenv("AI_ENGINE_REQUEST_CLOSE_TIMEOUT"); valAiTimeout != "" {
+		parsedVal, err := strconv.Atoi(valAiTimeout)
 		if err == nil {
-			MaxTestPatchingAttempts = parsedVal
+			AiEngineRequestTimeout = parsedVal
 		}
 	}
 
@@ -164,10 +162,24 @@ func loadEnv() error {
 		}
 	}
 
+	if valDockerTimeout := os.Getenv("DOCKER_START_TIMEOUT"); valDockerTimeout != "" {
+		parsedVal, err := strconv.Atoi(valDockerTimeout)
+		if err == nil {
+			DockerStartTimeout = parsedVal
+		}
+	}
+
 	if valContainerMemoryCap := os.Getenv("CONTAINER_MEMORY_CAP"); valContainerMemoryCap != "" {
 		parsedVal, err := strconv.Atoi(valContainerMemoryCap)
 		if err == nil {
 			ContainerMemoryCap = parsedVal
+		}
+	}
+
+	if valMaxTestAttempts := os.Getenv("MAX_TEST_PATCHING_ATTEMPTS"); valMaxTestAttempts != "" {
+		parsedVal, err := strconv.Atoi(valMaxTestAttempts)
+		if err == nil {
+			MaxTestPatchingAttempts = parsedVal
 		}
 	}
 
