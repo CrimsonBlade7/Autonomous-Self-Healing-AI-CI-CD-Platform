@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/dockertools"
@@ -40,6 +41,11 @@ func main() {
 			slog.Error("Failed to close the docker client", "error", err)
 		}
 	}()
+
+	if err := dockertools.WaitForDocker(mainCtx, cli, time.Duration(config.DockerStartTimeout)*time.Second); err != nil {
+		slog.Error("Docker daemon unreachable", "error", err)
+		return
+	}
 
 	if err := dockertools.ClearOldContainers(mainCtx, cli); err != nil {
 		slog.Error("Failed to clean old containers", "error", err)

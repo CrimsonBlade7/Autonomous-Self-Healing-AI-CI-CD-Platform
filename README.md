@@ -50,3 +50,24 @@ The data being recieved is a JSON with that can be unmarshalled into a AIEngineR
 - Tests         []byte      // Tests are ignored if Done.
 - Done          bool        // Always accompanied by summary.
 - Summary       string
+
+## Configurable Environment Variables
+	WsDir string
+
+	OrchRootDir                 string
+	Port                        string = "8080"
+	GithubToken                 string
+	RepositoryUrl               string
+	GithubSecret                string
+	AIEngineSecret              string
+	AIEnginePort                string = "8000"
+	AiEngineRequestTimeout      int    = 5   // seconds
+	ServerShutdownTimeout       int    = 30  // seconds
+	ReadHeaderTimeout           int    = 2   // seconds
+	WriteTimeout                int    = 5   // seconds
+	ContainerTimeout            int    = 10  // minutes
+	AIEngineRequestCloseTimeout int    = 10  // seconds
+	DockerStartTimeout          int    = 10  // seconds
+	ContainerMemoryCap          int    = 512 // MB
+	MaxTestPatchingAttempts     int    = 10
+	TestingEnvSlice             []string

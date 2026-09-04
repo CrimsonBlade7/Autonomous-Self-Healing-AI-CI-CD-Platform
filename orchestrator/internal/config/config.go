@@ -14,22 +14,23 @@ import (
 var (
 	WsDir string
 
-	RootDir                     string
+	OrchRootDir                 string
 	Port                        string = "8080"
 	GithubToken                 string
 	RepositoryUrl               string
 	GithubSecret                string
 	AIEngineSecret              string
 	AIEnginePort                string = "8000"
+	AiEngineRequestTimeout      int    = 5   // seconds
+	ServerShutdownTimeout       int    = 30  // seconds
+	ReadHeaderTimeout           int    = 2   // seconds
+	WriteTimeout                int    = 5   // seconds
+	ContainerTimeout            int    = 10  // minutes
+	AIEngineRequestCloseTimeout int    = 10  // seconds
+	DockerStartTimeout          int    = 10  // seconds
+	ContainerMemoryCap          int    = 512 // MB
+	MaxTestPatchingAttempts     int    = 10
 	TestingEnvSlice             []string
-	AiEngineRequestTimeout      int = 5   // seconds
-	ServerShutdownTimeout       int = 30  // seconds
-	ReadHeaderTimeout           int = 2   // seconds
-	WriteTimeout                int = 5   // seconds
-	ContainerTimeout            int = 10  // minutes
-	AIEngineRequestCloseTimeout int = 10  // seconds
-	ContainerMemoryCap          int = 512 // MB
-	MaxTestPatchingAttempts     int = 10
 )
 
 const (
@@ -41,44 +42,35 @@ const (
 
 // Sets the root directory.
 func resolveRootDir() error {
-	// Use env variable for the project root if it exists.
-	if root := os.Getenv("PROJECT_ROOT"); root != "" {
-		RootDir = root
+	// Use env variable for the project root if it exists. Useful for
+	// containers/CI where the marker-based walk isn't desired or possible.
+	if root := os.Getenv("ORCHESTRATOR_ROOT"); root != "" {
+		OrchRootDir = root
 		return nil
 	}
 
-	exePath, err := os.Executable()
+	dir, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("Failed to get executable path: %w", err)
+		return fmt.Errorf("Failed to get working directory: %w", err)
 	}
 
-	if exePath, err = filepath.EvalSymlinks(exePath); err != nil {
-		return fmt.Errorf("Failed to resolve symlinks: %w", err)
-	}
-
-	// If the executable is in the current working directory, use the current working directory.
-	// Otherwise, default to the folder containing the binary.
-	if strings.Contains(exePath, os.TempDir()) {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("Failed to get working directory: %w", err)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "config", "test-env-vars.txt")); err == nil {
+			OrchRootDir = dir
+			return nil
 		}
-		// go run from orchestrator/ should resolve to the monorepo root.
-		if filepath.Base(cwd) == "orchestrator" {
-			RootDir = filepath.Dir(cwd)
-		} else {
-			RootDir = cwd
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return fmt.Errorf("Could not locate orchestrator root (no config/test-env-vars.txt found)")
 		}
-	} else {
-		RootDir = filepath.Dir(exePath)
+		dir = parent
 	}
-	return nil
 }
 
 // Loads the environment variables to be injected into the docker container for testing.
 func loadTestingEnvVars() error {
 	// Target the nested config directory
-	envPath := RelToAbsPath("orchestrator", "config", "test-env-vars.txt")
+	envPath := RelToAbsPath("config", "test-env-vars.txt")
 
 	testEnvFile, err := os.Open(envPath)
 	if err != nil {
@@ -104,7 +96,7 @@ func loadTestingEnvVars() error {
 // Loads the environment variables.
 func loadEnv() error {
 	// Root level .env file
-	envPath := RelToAbsPath("orchestrator", ".env")
+	envPath := RelToAbsPath(".env")
 	if err := godotenv.Load(envPath); err != nil {
 		// Non-fatal if running in environments where variables are injected directly (e.g., Docker/K8s)
 		if !os.IsNotExist(err) {
@@ -156,10 +148,10 @@ func loadEnv() error {
 		}
 	}
 
-	if valMaxTestAttempts := os.Getenv("MAX_TEST_PATCHING_ATTEMPTS"); valMaxTestAttempts != "" {
-		parsedVal, err := strconv.Atoi(valMaxTestAttempts)
+	if valAiTimeout := os.Getenv("AI_ENGINE_REQUEST_CLOSE_TIMEOUT"); valAiTimeout != "" {
+		parsedVal, err := strconv.Atoi(valAiTimeout)
 		if err == nil {
-			MaxTestPatchingAttempts = parsedVal
+			AiEngineRequestTimeout = parsedVal
 		}
 	}
 
@@ -170,10 +162,24 @@ func loadEnv() error {
 		}
 	}
 
+	if valDockerTimeout := os.Getenv("DOCKER_START_TIMEOUT"); valDockerTimeout != "" {
+		parsedVal, err := strconv.Atoi(valDockerTimeout)
+		if err == nil {
+			DockerStartTimeout = parsedVal
+		}
+	}
+
 	if valContainerMemoryCap := os.Getenv("CONTAINER_MEMORY_CAP"); valContainerMemoryCap != "" {
 		parsedVal, err := strconv.Atoi(valContainerMemoryCap)
 		if err == nil {
 			ContainerMemoryCap = parsedVal
+		}
+	}
+
+	if valMaxTestAttempts := os.Getenv("MAX_TEST_PATCHING_ATTEMPTS"); valMaxTestAttempts != "" {
+		parsedVal, err := strconv.Atoi(valMaxTestAttempts)
+		if err == nil {
+			MaxTestPatchingAttempts = parsedVal
 		}
 	}
 
@@ -230,5 +236,5 @@ func Init() error {
 
 // Joins and prefixes the root to create the absolute path.
 func RelToAbsPath(relPath ...string) string {
-	return filepath.Join(append([]string{RootDir}, relPath...)...)
+	return filepath.Join(append([]string{OrchRootDir}, relPath...)...)
 }
