@@ -11,6 +11,5 @@ WORKDIR /app
 COPY --from=builder /out/orchestrator-bin ./orchestrator-bin
 COPY config ./config
 RUN mkdir -p ./workspaces
-
 EXPOSE 8080
 ENTRYPOINT [ "./orchestrator-bin" ]

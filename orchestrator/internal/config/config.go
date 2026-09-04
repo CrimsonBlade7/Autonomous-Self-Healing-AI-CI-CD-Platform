@@ -39,7 +39,7 @@ const (
 	GB   int = 1e3 * MB
 
 	// The file used to identify the orchestrator root when walking up from cwd.
-	rootMarkerFile = "go.mod"
+	rootMarkerFile = "app"
 )
 
 // Sets the root directory.
@@ -51,33 +51,19 @@ func resolveRootDir() error {
 		return nil
 	}
 
-	cwd, err := os.Getwd()
+	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("Failed to get working directory: %w", err)
 	}
 
-	root, err := findOrchRoot(cwd, rootMarkerFile)
-	if err != nil {
-		return fmt.Errorf("Failed to locate monorepo root (looked for %s above %s): %w", rootMarkerFile, cwd, err)
-	}
-
-	OrchRootDir = root
-	return nil
-}
-
-// Walks up from startDir looking for a directory containing marker.
-// Returns an error if it reaches the filesystem root without finding it.
-func findOrchRoot(startDir, marker string) (string, error) {
-	dir := startDir
 	for {
-		if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
-			return dir, nil
+		if _, err := os.Stat(filepath.Join(dir, "config", "test-env-vars.txt")); err == nil {
+			OrchRootDir = dir
+			return nil
 		}
-
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root without finding the marker.
-			return "", fmt.Errorf("Marker file %q not found in any parent of %s", marker, startDir)
+			return fmt.Errorf("Could not locate orchestrator root (no config/test-env-vars.txt found)")
 		}
 		dir = parent
 	}

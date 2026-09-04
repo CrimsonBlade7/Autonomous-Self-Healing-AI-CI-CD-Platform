@@ -102,29 +102,3 @@ func TestLoadTestingEnvVars(t *testing.T) {
 		t.Errorf("TestingEnvSlice = %#v", TestingEnvSlice)
 	}
 }
-
-func TestFindRepoRoot(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "docker-compose.yml"), []byte(""), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	nested := filepath.Join(root, "orchestrator", "cmd")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	got, err := findOrchRoot(nested, "docker-compose.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != root {
-		t.Errorf("got %q, want %q", got, root)
-	}
-}
-
-func TestFindRepoRoot_NotFound(t *testing.T) {
-	dir := t.TempDir()
-	if _, err := findOrchRoot(dir, "docker-compose.yml"); err == nil {
-		t.Fatal("expected error when marker is absent")
-	}
-}
