@@ -1,6 +1,6 @@
 module github.com/benl1006/Autonomous-CI-Platform/orchestrator
 
-go 1.27.0
+go 1.27.1
 
 require (
 	github.com/go-git/go-git/v6 v6.0.0-alpha.5
