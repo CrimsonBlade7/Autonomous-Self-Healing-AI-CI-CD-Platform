@@ -21,8 +21,8 @@ class Settings(BaseSettings):
     # Format: redis://host:port/db_index
     redis_url: str = "redis://localhost:6379/0"
 
-    # Anthropic API key for Claude — used by the patch generator (Phase 4).
-    anthropic_api_key: str = ""
+    # Gemini API key for Google Gemini — used by the patch generator (Phase 4).
+    gemini_api_key: str = ""
 
     # sentence-transformers model used to create vector embeddings.
     # all-MiniLM-L6-v2 produces 384-dimensional vectors.

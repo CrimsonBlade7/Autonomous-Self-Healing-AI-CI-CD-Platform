@@ -1,6 +1,6 @@
 # Phase 4: Patch Generator
 #
-# Sends the RAG context window to Anthropic Claude and extracts the resulting
+# Sends the RAG context window to Google Gemini and extracts the resulting
 # unified diff patch.
 #
 # Input:

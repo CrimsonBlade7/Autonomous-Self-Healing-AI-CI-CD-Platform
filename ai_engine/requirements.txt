@@ -16,8 +16,8 @@ redis>=5.0.8
 # Embedding model — all-MiniLM-L6-v2 produces 384-dimensional vectors
 sentence-transformers>=3.0.0
 
-# LLM client — Anthropic Claude for patch generation (Phase 4)
-anthropic>=0.28.0
+# LLM client — Google Gemini for patch generation (Phase 4)
+google-genai>=0.1.0
 
 # Settings management — reads env vars / .env files via Pydantic
 pydantic-settings>=2.3.0
