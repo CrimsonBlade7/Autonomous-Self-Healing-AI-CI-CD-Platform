@@ -2,3 +2,7 @@
 *_test.go
 makefile
 workspaces
+.git
+.dockerignore
+out/
+*.md

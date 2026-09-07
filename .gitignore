@@ -1,5 +1,25 @@
 .env
+
+# Python test artifacts
 .venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+
+# Go build artifacts
+orchestrator/out/
+*.exe
+*.test
+
+# Workspaces (runtime-created clone dirs, not fixtures)
+orchestrator/workspaces/*
+!orchestrator/workspaces/*/.keep
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs, if you ever redirect slog output to a file
+*.log
