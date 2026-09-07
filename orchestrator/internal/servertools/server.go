@@ -184,7 +184,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 		return fmt.Errorf("Failed to marshal the message package: %w", err)
 	}
 	msgReader := bytes.NewReader(msgBytes)
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://localhost:%s", config.AIEnginePort), msgReader)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, fmt.Sprintf("http://%s:%s", config.AIEngineHost, config.AIEnginePort), msgReader)
 	if err != nil {
 		return fmt.Errorf("Failed to create http request: %w", err)
 	}

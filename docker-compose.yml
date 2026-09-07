@@ -1,13 +1,15 @@
 # docker-compose.yml
 #
 # Brings up the full local development stack:
-#   postgres    — PostgreSQL 16 with pgvector extension
-#   redis       — Redis 7 (Celery broker + result backend)
-#   ai-engine   — Python FastAPI service (port 8001)
+#   postgres      — PostgreSQL 16 with pgvector extension
+#   redis         — Redis 7 (Celery broker + result backend)
+#   ai-engine     — Python FastAPI service (port 8001)
 #   celery-worker — Background task worker for log analysis / RAG / patch gen
+#   orchestrator  — Go webhook/pipeline service (port 8080)
 #
-# Required environment variable (set in your shell or a .env file at project root):
-#   ANTHROPIC_API_KEY=<your key>
+# Setup: copy ai_engine/.env.example -> ai_engine/.env and
+# orchestrator/.env.example -> orchestrator/.env, then fill in the values.
+# AI_ENGINE_SECRET must be identical in both files.
 #
 # Usage:
 #   docker compose up --build
@@ -55,12 +57,13 @@ services:
     container_name: aiplatform-ai-engine
     ports:
       - "8001:8001"
+    env_file:
+      - ./ai_engine/.env
+    # Compose-network overrides: these always win over values in .env.
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
       REDIS_URL: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ORCHESTRATOR_URL: http://orchestrator:8080
-      AI_ENGINE_SECRET: ${AI_ENGINE_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,10 +80,11 @@ services:
     container_name: aiplatform-celery-worker
     # Override the default CMD to start the Celery worker instead of uvicorn.
     command: celery -A app.tasks.workers.celery_app worker --loglevel=info
+    env_file:
+      - ./ai_engine/.env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
       REDIS_URL: redis://redis:6379/0
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,21 +93,26 @@ services:
     volumes:
       - ./ai_engine:/app
 
-  # -------------------------------------------------------------------------
-  # Phase 6: Go orchestrator service
-  # Uncomment once docker/orchestrator.Dockerfile exists.
-  # -------------------------------------------------------------------------
-  # orchestrator:
-  #   build:
-  #     context: ../orchestrator
-  #     dockerfile: ../docker/orchestrator.Dockerfile
-  #   container_name: aiplatform-orchestrator
-  #   ports:
-  #     - "8080:8080"
-  #   environment:
-  #     AI_ENGINE_URL: http://ai-engine:8001
-  #   depends_on:
-  #     - ai-engine
+  orchestrator:
+    build:
+      context: ./orchestrator
+      dockerfile: Dockerfile
+    container_name: aiplatform-orchestrator
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./orchestrator/.env
+    # Compose-network overrides: these always win over values in .env.
+    environment:
+      AI_ENGINE_HOST: ai-engine
+      AI_ENGINE_PORT: 8001
+      PORT: 8080
+    # Mounts the host Docker socket so the orchestrator can build/run test
+    # containers on the same daemon docker-compose itself is using.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - ai-engine
 
 volumes:
   postgres_data:

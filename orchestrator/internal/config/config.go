@@ -20,6 +20,7 @@ var (
 	RepositoryUrl               string
 	GithubSecret                string
 	AIEngineSecret              string
+	AIEngineHost                string = "localhost"
 	AIEnginePort                string = "8000"
 	AiEngineRequestTimeout      int    = 5   // seconds
 	ServerShutdownTimeout       int    = 30  // seconds
@@ -112,6 +113,10 @@ func loadEnv() error {
 
 	if p := os.Getenv("PORT"); p != "" {
 		Port = p
+	}
+
+	if aiHost := os.Getenv("AI_ENGINE_HOST"); aiHost != "" {
+		AIEngineHost = aiHost
 	}
 
 	if aiPort := os.Getenv("AI_ENGINE_PORT"); aiPort != "" {

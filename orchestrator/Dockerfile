@@ -13,3 +13,4 @@ COPY config ./config
 RUN mkdir -p ./workspaces
 EXPOSE 8080
 ENTRYPOINT [ "./orchestrator-bin" ]
+
