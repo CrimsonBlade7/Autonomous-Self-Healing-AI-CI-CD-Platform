@@ -26,6 +26,7 @@ The Job-Type header is one of:
 
 #### Data
 The data being sent is contained within a AIEngineRequest struct as a JSON with the following fields:
+```go
 - Stdout    string
 - Stderr    string
 - StartTime time.Time
@@ -34,6 +35,7 @@ The data being sent is contained within a AIEngineRequest struct as a JSON with 
 - Status    string      // One of "created", "running", "paused", "restarting", "removing", "exited", or "dead"
 - OOMKilled bool        // Killed: out of memory
 - ExitCode  int
+```
 
 ### AI Engine -> Orchestrator
 The AI Engine sends an http request to the local port assigned to the orchestrator. The AI Engine sends logs or a done signal.
@@ -44,30 +46,34 @@ The AI Engine sends an http request to the local port assigned to the orchestrat
 
 #### Data
 The data being recieved is a JSON with that can be unmarshalled into a AIEngineResponse struct the following fields:
-- Wfid          int
-- PullRequest   PullRequest
-- TestName      string
-- Tests         []byte      // Tests are ignored if Done.
-- Done          bool        // Always accompanied by summary.
-- Summary       string
+```go
+Wfid          int
+PullRequest   PullRequest
+TestName      string
+Tests         []byte      // Tests are ignored if Done.
+Done          bool        // Always accompanied by summary.
+Summary       string
+```
 
 ## Configurable Environment Variables
-	WsDir string
+```go
+WsDir string
 
-	OrchRootDir                 string
-	Port                        string = "8080"
-	GithubToken                 string
-	RepositoryUrl               string
-	GithubSecret                string
-	AIEngineSecret              string
-	AIEnginePort                string = "8000"
-	AiEngineRequestTimeout      int    = 5   // seconds
-	ServerShutdownTimeout       int    = 30  // seconds
-	ReadHeaderTimeout           int    = 2   // seconds
-	WriteTimeout                int    = 5   // seconds
-	ContainerTimeout            int    = 10  // minutes
-	AIEngineRequestCloseTimeout int    = 10  // seconds
-	DockerStartTimeout          int    = 10  // seconds
-	ContainerMemoryCap          int    = 512 // MB
-	MaxTestPatchingAttempts     int    = 10
-	TestingEnvSlice             []string
+OrchRootDir                 string
+Port                        string = "8080"
+GithubToken                 string
+RepositoryUrl               string
+GithubSecret                string
+AIEngineSecret              string
+AIEnginePort                string = "8000"
+AiEngineRequestTimeout      int    = 5   // seconds
+ServerShutdownTimeout       int    = 30  // seconds
+ReadHeaderTimeout           int    = 2   // seconds
+WriteTimeout                int    = 5   // seconds
+ContainerTimeout            int    = 10  // minutes
+AIEngineRequestCloseTimeout int    = 10  // seconds
+DockerStartTimeout          int    = 10  // seconds
+ContainerMemoryCap          int    = 512 // MB
+MaxTestPatchingAttempts     int    = 10
+TestingEnvSlice             []string
+```
