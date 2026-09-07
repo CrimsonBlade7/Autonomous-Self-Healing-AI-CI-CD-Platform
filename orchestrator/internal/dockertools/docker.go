@@ -71,7 +71,10 @@ func WaitForDocker(ctx context.Context, cli *dockerClient.Client, timeout time.D
 
 // Removes up old images
 func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
-	images, err := im.ImageList(ctx, dockerClient.ImageListOptions{All: true})
+	images, err := im.ImageList(ctx, dockerClient.ImageListOptions{
+		All:     true,
+		Filters: dockerClient.Filters{"label": {"managed-by=ci-orchestrator": true}},
+	})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch image list: %w", err)
 	}
@@ -85,7 +88,10 @@ func ClearOldImages(ctx context.Context, im ImageManager) (err error) {
 
 // Removes up old containers
 func ClearOldContainers(ctx context.Context, cm ContainerManager) (err error) {
-	conts, err := cm.ContainerList(ctx, dockerClient.ContainerListOptions{All: true})
+	conts, err := cm.ContainerList(ctx, dockerClient.ContainerListOptions{
+		All:     true,
+		Filters: dockerClient.Filters{"label": {"managed-by=ci-orchestrator": true}},
+	})
 	if err != nil {
 		return fmt.Errorf("Failed to fetch container list: %w", err)
 	}
@@ -123,6 +129,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	imageResult, err := im.ImageBuild(ctx, pr, dockerClient.ImageBuildOptions{
 		Tags:       []string{tag},
 		Dockerfile: "Dockerfile",
+		Labels:     map[string]string{"managed-by": "ci-orchestrator"},
 	})
 	if err != nil {
 		return "", fmt.Errorf("Failed to build image: %w", err)
@@ -167,12 +174,11 @@ func RunContainer(ctx context.Context, cm ContainerManager, tag string) (id stri
 
 	cont, err := cm.ContainerCreate(ctx, dockerClient.ContainerCreateOptions{
 		Config: &container.Config{
-			Env: config.TestingEnvSlice,
+			Env:    config.TestingEnvSlice,
+			Labels: map[string]string{"managed-by": "ci-orchestrator"},
 		},
 		HostConfig: &container.HostConfig{
-			Resources: container.Resources{
-				Memory: int64(config.ContainerMemoryCap * config.MB),
-			},
+			Memory: int64(config.ContainerMemoryCap * config.MB),
 		},
 		Name:  tag,
 		Image: tag,
