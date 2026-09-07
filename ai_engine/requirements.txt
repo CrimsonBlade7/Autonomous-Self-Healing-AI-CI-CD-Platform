@@ -8,6 +8,7 @@ asyncpg>=0.29.0
 
 # Vector similarity search (pgvector Python types + SQLAlchemy integration)
 pgvector>=0.3.2
+numpy>=1.26.0
 
 # Async task queue — Celery uses Redis as broker and result backend
 celery[redis]>=5.4.0

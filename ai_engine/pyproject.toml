@@ -12,6 +12,7 @@ uvicorn = { extras = ["standard"], version = "^0.30.0" }
 sqlalchemy = { extras = ["asyncio"], version = "^2.0.30" }
 asyncpg = "^0.29.0"
 pgvector = "^0.3.2"
+numpy = "^1.26.0"
 celery = { extras = ["redis"], version = "^5.4.0" }
 redis = "^5.0.8"
 sentence-transformers = "^3.0.0"
