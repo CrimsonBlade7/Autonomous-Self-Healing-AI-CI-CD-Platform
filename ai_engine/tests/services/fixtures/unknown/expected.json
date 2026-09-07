@@ -1,0 +1,8 @@
+{
+  "error_type": "AssertionError",
+  "failing_test": "unknown",
+  "stack_trace_lines": [
+    "AssertionError: expected 1, got 2"
+  ],
+  "error_signature": "AssertionError | unknown | expected 1, got 2"
+}
