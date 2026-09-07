@@ -13,15 +13,21 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def celery_task(monkeypatch):
     job_id = "550e8400-e29b-41d4-a716-446655440000"
-    task = SimpleNamespace(
-        id=job_id,
-        state="SUCCESS",
-        ready=lambda: True,
-        result=create_log_response("Traceback (most recent call last):\nAssertionError: boom"),
-    )
-    monkeypatch.setattr("app.main.analyze_log.delay", lambda raw_log: task)
-    monkeypatch.setattr("app.main.celery_app.AsyncResult", lambda requested_job_id: task)
-    return task
+    tasks_by_job_id = {}
+
+    def fake_delay(raw_log):
+        task = SimpleNamespace(
+            id=job_id,
+            state="SUCCESS",
+            ready=lambda: True,
+            result=create_log_response(raw_log),
+        )
+        tasks_by_job_id[job_id] = task
+        return task
+
+    monkeypatch.setattr("app.main.analyze_log.delay", fake_delay)
+    monkeypatch.setattr("app.main.celery_app.AsyncResult", lambda requested_job_id: tasks_by_job_id[requested_job_id])
+    return tasks_by_job_id
 
 
 def test_analyze_accepts_log_and_returns_job_id():
