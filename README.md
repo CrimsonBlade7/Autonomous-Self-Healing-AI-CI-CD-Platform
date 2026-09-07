@@ -27,14 +27,14 @@ The Job-Type header is one of:
 #### Data
 The data being sent is contained within a AIEngineRequest struct as a JSON with the following fields:
 ```go
-- Stdout    string
-- Stderr    string
-- StartTime time.Time
-- EndTime   time.Time
-- Errors    string      // Compile or entry command errors
-- Status    string      // One of "created", "running", "paused", "restarting", "removing", "exited", or "dead"
-- OOMKilled bool        // Killed: out of memory
-- ExitCode  int
+Stdout    string
+Stderr    string
+StartTime time.Time
+EndTime   time.Time
+Errors    string      // Compile or entry command errors
+Status    string      // One of "created", "running", "paused", "restarting", "removing", "exited", or "dead"
+OOMKilled bool        // Killed: out of memory
+ExitCode  int
 ```
 
 ### AI Engine -> Orchestrator
