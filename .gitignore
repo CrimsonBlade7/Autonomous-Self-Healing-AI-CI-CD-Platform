@@ -5,6 +5,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+*.lock
 
 # Go build artifacts
 orchestrator/out/
