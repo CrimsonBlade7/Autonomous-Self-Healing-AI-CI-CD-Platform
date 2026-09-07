@@ -21,7 +21,7 @@ var (
 	GithubSecret                string
 	AIEngineSecret              string
 	AIEngineHost                string = "localhost"
-	AIEnginePort                string = "8000"
+	AIEnginePort                string = "8001"
 	AiEngineRequestTimeout      int    = 5   // seconds
 	ServerShutdownTimeout       int    = 30  // seconds
 	ReadHeaderTimeout           int    = 2   // seconds
