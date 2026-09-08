@@ -35,7 +35,7 @@ func TestValidateConfig_MissingRequired(t *testing.T) {
 		t.Fatal("expected missing env error")
 	}
 	msg := err.Error()
-	for _, name := range []string{"GITHUB_TOKEN", "GITHUB_REPOSITORY_URL", "GITHUB_WEBHOOK_SECRET", "AI_ENGINE_SECRET"} {
+	for _, name := range []string{"GITHUB_PAT", "GITHUB_REPOSITORY_URL", "GITHUB_WEBHOOK_SECRET", "AI_ENGINE_SECRET"} {
 		if !strings.Contains(msg, name) {
 			t.Errorf("error %q missing %s", msg, name)
 		}
