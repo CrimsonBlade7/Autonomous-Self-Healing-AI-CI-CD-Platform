@@ -26,16 +26,16 @@ services:
       timeout: 3s
       retries: 10
 
-x-ai-common: &ai-common
-  build: ./ai_engine
-  environment:
-    DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
-    REDIS_URL: redis://redis:6379/0
-    ORCHESTRATOR_URL: http://host.docker.internal:8080
-    AI_ENGINE_SECRET: ${AI_ENGINE_SECRET}
-    GEMINI_API_KEY: ${GEMINI_API_KEY}
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
+  x-ai-common: &ai-common
+    build: ./ai_engine
+    environment:
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
+      REDIS_URL: redis://redis:6379/0
+      ORCHESTRATOR_URL: http://host.docker.internal:8080
+      AI_ENGINE_SECRET: ${AI_ENGINE_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   ai-service:
     build: ./ai_engine
