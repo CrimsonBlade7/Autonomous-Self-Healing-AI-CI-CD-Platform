@@ -3,7 +3,7 @@
 # Brings up the full local development stack:
 #   postgres      — PostgreSQL 16 with pgvector extension
 #   redis         — Redis 7 (Celery broker + result backend)
-#   ai-engine     — Python FastAPI service (port 8001)
+#   ai-engine     — Python FastAPI service (port 8000)
 #   celery-worker — Background task worker for log analysis / RAG / patch gen
 #   orchestrator  — Go webhook/pipeline service (port 8080)
 #
@@ -57,7 +57,7 @@ services:
       dockerfile: Dockerfile
     container_name: aiplatform-ai-engine
     ports:
-      - "8001:8001"
+      - "8001:8000"
     env_file:
       - ./ai_engine/.env
     # Compose-network overrides: these always win over values in .env.
@@ -106,7 +106,7 @@ services:
     # Compose-network overrides: these always win over values in .env.
     environment:
       AI_ENGINE_HOST: ai-engine
-      AI_ENGINE_PORT: 8001
+      AI_ENGINE_PORT: 8000
       PORT: 8080
     # Mounts the host Docker socket so the orchestrator can build/run test
     # containers on the same daemon docker-compose itself is using.
