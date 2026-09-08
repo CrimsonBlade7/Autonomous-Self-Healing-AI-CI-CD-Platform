@@ -2,8 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
@@ -16,20 +19,36 @@ import (
 )
 
 func main() {
-	// slogs are currently just printed to stdout
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// Initialize environment variables to global scope
+	if err := config.Init(); err != nil {
+		slog.Error("Failed to initialize global variables", "error", err)
+		return
+	}
+
+	// Create log directory if it does not yet exist
+	logDirPath := config.RelToAbsPath("logs")
+	if err := os.MkdirAll(logDirPath, 0755); err != nil {
+		fmt.Printf("Failed to create log directory: %v\n", err)
+		return
+	}
+
+	// slogs are currently printed to stdout and the log folder
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	logFilename := fmt.Sprintf("ci_platform_%s.json", timestamp)
+	logFile, err := os.OpenFile(filepath.Join(logDirPath, logFilename), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		fmt.Printf("Failed to open log file: %v\n", err)
+		return
+	}
+	defer logFile.Close()
+	multiLogger := io.MultiWriter(os.Stdout, logFile)
+	logger := slog.New(slog.NewJSONHandler(multiLogger, nil))
 	slog.SetDefault(logger)
 	mainCtx := context.Background()
 	prChan := make(chan types.PullRequest)
 	aierChan := make(chan types.AIEngineResponse)
 	pcMap := types.NewPushedCommits()
 	wfm := pipelines.NewWorkflowManager()
-
-	// Initialize environment variables to global scope
-	if err := config.Init(); err != nil {
-		slog.Error("Failed to initialize global variables", "error", err)
-		return
-	}
 
 	cli, err := dockerClient.New(dockerClient.FromEnv)
 	if err != nil {

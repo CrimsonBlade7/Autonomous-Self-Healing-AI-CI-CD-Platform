@@ -148,12 +148,9 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 	}
 
 	var t temp
-	buf, err := io.ReadAll(imageResult.Body)
-	if err != nil {
-		return "", fmt.Errorf("Failed to read image build result: %w", err)
-	}
-	if err := json.Unmarshal(buf, &t); err != nil {
-		return "", fmt.Errorf("Failed to unmarshal image build result: %w", err)
+	jsonDecoder := json.NewDecoder(imageResult.Body)
+	if err := jsonDecoder.Decode(&t); err != nil {
+		return "", fmt.Errorf("Failed to decode image build result: %w", err)
 	}
 
 	if t.ErrorDetail.Code != 0 || t.ErrorDetail.Message != "" {

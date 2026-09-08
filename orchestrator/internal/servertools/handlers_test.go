@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -187,9 +186,9 @@ func TestSendRequestAIEngine_SuccessAndBadStatus(t *testing.T) {
 		if r.Header.Get("HMAC-Signature-256") == "" {
 			t.Error("missing HMAC header")
 		}
-		body, _ := io.ReadAll(r.Body)
 		var req types.AIEngineRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		jsonDecoder := json.NewDecoder(r.Body)
+		if err := jsonDecoder.Decode(&req); err != nil {
 			t.Errorf("body: %v", err)
 		}
 		if req.Wfid != 9 {
