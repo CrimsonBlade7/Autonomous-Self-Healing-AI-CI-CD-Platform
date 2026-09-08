@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/config"
@@ -103,8 +105,71 @@ func ClearOldContainers(ctx context.Context, cm ContainerManager) (err error) {
 	return nil
 }
 
+func detectBuildRoot(srcPath string) (string, error) {
+	if srcPath == "" {
+		return "", fmt.Errorf("build root path is empty")
+	}
+
+	if _, err := os.Stat(filepath.Join(srcPath, "Dockerfile")); err == nil {
+		return srcPath, nil
+	}
+
+	bestRoot := srcPath
+	bestScore := -1
+
+	walkErr := filepath.WalkDir(srcPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if d.Name() == ".git" || d.Name() == ".venv" || d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		name := d.Name()
+		if name != "Dockerfile" && name != "pyproject.toml" && name != "requirements.txt" && name != "package.json" {
+			return nil
+		}
+
+		dir := filepath.Dir(path)
+		score := 0
+		if _, err := os.Stat(filepath.Join(dir, "Dockerfile")); err == nil {
+			score += 2
+		}
+		if _, err := os.Stat(filepath.Join(dir, "pyproject.toml")); err == nil {
+			score += 2
+		}
+		if _, err := os.Stat(filepath.Join(dir, "requirements.txt")); err == nil {
+			score += 2
+		}
+		if _, err := os.Stat(filepath.Join(dir, "package.json")); err == nil {
+			score += 2
+		}
+
+		if score > bestScore {
+			bestScore = score
+			bestRoot = dir
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return "", fmt.Errorf("Failed to scan build root: %w", walkErr)
+	}
+
+	if bestScore < 0 {
+		return srcPath, nil
+	}
+	return bestRoot, nil
+}
+
 // Builds an image from src with sha as the tag.
 func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath string, tb TarBuilder) (tag string, err error) {
+	buildRoot, err := detectBuildRoot(srcPath)
+	if err != nil {
+		return "", fmt.Errorf("Failed to detect project root: %w", err)
+	}
 
 	pr, pw := io.Pipe()
 	defer func() {
@@ -122,7 +187,7 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 			slog.Error("Pipe writter failed to close", "error", err)
 			return
 		}
-	}(pw, srcPath)
+	}(pw, buildRoot)
 
 	tag = fmt.Sprintf("%s:%s", wsName, sha)
 
@@ -147,22 +212,21 @@ func BuildImage(ctx context.Context, im ImageManager, wsName, sha, srcPath strin
 		} `json:"errorDetail,omitempty"`
 	}
 
-	var t temp
-	buf, err := io.ReadAll(imageResult.Body)
-	if err != nil {
-		return "", fmt.Errorf("Failed to read image build result: %w", err)
-	}
-	if err := json.Unmarshal(buf, &t); err != nil {
-		return "", fmt.Errorf("Failed to unmarshal image build result: %w", err)
-	}
-
-	if t.ErrorDetail.Code != 0 || t.ErrorDetail.Message != "" {
-		return "", fmt.Errorf(
-			"Failed to build image\n"+
-				"Code: %v\n"+
-				"Message: %s\n"+
-				"Error: %w",
-			t.ErrorDetail.Code, t.ErrorDetail.Message, ImageBuildErr)
+	// The build API streams newline-delimited JSON messages, not a single object.
+	decoder := json.NewDecoder(imageResult.Body)
+	for decoder.More() {
+		var t temp
+		if err := decoder.Decode(&t); err != nil {
+			return "", fmt.Errorf("Failed to unmarshal image build result: %w", err)
+		}
+		if t.ErrorDetail.Code != 0 || t.ErrorDetail.Message != "" {
+			return "", fmt.Errorf(
+				"Failed to build image\n"+
+					"Code: %v\n"+
+					"Message: %s\n"+
+					"Error: %w",
+				t.ErrorDetail.Code, t.ErrorDetail.Message, ImageBuildErr)
+		}
 	}
 
 	return tag, err

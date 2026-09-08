@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +130,28 @@ func TestBuildImage_Success(t *testing.T) {
 	}
 	if tag != "ws:sha1" {
 		t.Errorf("tag = %q", tag)
+	}
+}
+
+func TestDetectBuildRoot_FindsNestedProject(t *testing.T) {
+	root := t.TempDir()
+	appDir := filepath.Join(root, "services", "api")
+	if err := os.MkdirAll(appDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "pyproject.toml"), []byte("[project]\nname='demo'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(appDir, "Dockerfile"), []byte("FROM scratch\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := detectBuildRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != appDir {
+		t.Fatalf("detectBuildRoot() = %q, want %q", got, appDir)
 	}
 }
 

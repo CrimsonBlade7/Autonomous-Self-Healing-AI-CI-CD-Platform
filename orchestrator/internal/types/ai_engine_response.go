@@ -14,4 +14,8 @@ type AIEngineResponse struct {
 	// Done should always be accompanied by Summary.
 	Done    bool
 	Summary string
+
+	// Review guidance is returned when a generated test still fails.
+	Suggestions   string
+	Documentation string
 }

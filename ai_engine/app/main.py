@@ -110,6 +110,8 @@ class JobRequest(BaseModel):
 async def _process_job(job_type: str, payload: JobRequest) -> None:
     """Background task: analyse logs and POST the result back to the orchestrator."""
     from app.services import orchestrator_client
+    from app.services.log_analyzer import parse_log
+    from app.services.patch_gen import generate_fix_proposal
     from app.services.test_gen import generate_tests
 
     pr = payload.PullRequest
@@ -133,6 +135,25 @@ async def _process_job(job_type: str, payload: JobRequest) -> None:
         )
         return
 
+    pr_description = "\n".join(filter(None, [pr.title, pr.body])).strip()
+
+    if job_type == "open":
+        package = generate_tests(
+            pr_description or f"PR #{pr.number}",
+            source="ci",
+            fixture_name=f"pr_{pr.number}",
+            pr_description=pr_description,
+        )
+        await orchestrator_client.send_response(
+            payload.Wfid,
+            pr_dict,
+            done=False,
+            test_name=f"test_{package['fixture_slug']}.py",
+            tests=package["test_stub"].encode(),
+            documentation=package["documentation"],
+        )
+        return
+
     # job_type == "logs"
     if payload.ExitCode == 0:
         await orchestrator_client.send_response(
@@ -144,13 +165,21 @@ async def _process_job(job_type: str, payload: JobRequest) -> None:
         return
 
     combined_log = "\n".join(filter(None, [payload.Stdout, payload.Stderr, payload.Errors]))
-    package = generate_tests(combined_log, source="ci")
+    parsed = parse_log(combined_log)
+    proposal = generate_fix_proposal(parsed, pr_description=pr_description)
+    package = generate_tests(
+        combined_log,
+        source="ci",
+        pr_description=pr_description,
+    )
     await orchestrator_client.send_response(
         payload.Wfid,
         pr_dict,
         done=False,
         test_name=f"test_{package['fixture_slug']}.py",
         tests=package["test_stub"].encode(),
+        suggestions=proposal["suggestions"],
+        documentation=proposal["documentation"],
     )
 
 
@@ -161,7 +190,7 @@ async def job_handler(request: Request, background_tasks: BackgroundTasks, paylo
     if job_type not in VALID_JOB_TYPES:
         raise HTTPException(status_code=400, detail=f"Unknown Job-Type: {job_type!r}")
 
-    if job_type in ("open", "edit", "sync"):
+    if job_type in ("edit", "sync"):
         return {"status": "ok"}
 
     background_tasks.add_task(_process_job, job_type, payload)

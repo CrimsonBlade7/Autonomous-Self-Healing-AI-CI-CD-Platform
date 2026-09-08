@@ -269,7 +269,14 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				if aier == nil {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
-				if err := wstools.WriteSummary(filepath.Join(wf.workspace.path, "summary.md"), aier.Summary); err != nil {
+				summary := aier.Summary
+				if aier.Suggestions != "" {
+					summary += "\n\n## Fix Suggestions\n" + aier.Suggestions
+				}
+				if aier.Documentation != "" {
+					summary += "\n\n" + aier.Documentation
+				}
+				if err := wstools.WriteSummary(filepath.Join(wf.workspace.path, "summary.md"), summary); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
 						err:  fmt.Errorf("Failed to write summary: %w", err),
