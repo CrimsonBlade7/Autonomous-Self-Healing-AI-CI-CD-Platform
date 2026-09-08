@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -169,15 +170,94 @@ func TestSendRequestAIEngine_InvalidJobType(t *testing.T) {
 	}
 }
 
+func TestPostSummaryComment_Success(t *testing.T) {
+	prevToken, prevTimeout := config.GithubToken, config.RequestTimeout
+	t.Cleanup(func() {
+		config.GithubToken = prevToken
+		config.RequestTimeout = prevTimeout
+	})
+	config.GithubToken = "gh-token"
+	config.RequestTimeout = 2
+
+	var (
+		gotMethod      string
+		gotAuth        string
+		gotAccept      string
+		gotContentType string
+		gotBody        string
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotAuth = r.Header.Get("Authorization")
+		gotAccept = r.Header.Get("Accept")
+		gotContentType = r.Header.Get("Content-Type")
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("ReadAll: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		gotBody = string(body)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(srv.Close)
+
+	body := `{"body":"summary"}`
+	if err := PostSummaryComment(context.Background(), srv.URL, body); err != nil {
+		t.Fatalf("PostSummaryComment: %v", err)
+	}
+
+	if gotMethod != http.MethodPost {
+		t.Fatalf("method = %q, want %q", gotMethod, http.MethodPost)
+	}
+	if gotAuth != "Bearer gh-token" {
+		t.Fatalf("Authorization = %q, want %q", gotAuth, "Bearer gh-token")
+	}
+	if gotAccept != "application/vnd.github+json" {
+		t.Fatalf("Accept = %q, want %q", gotAccept, "application/vnd.github+json")
+	}
+	if gotContentType != "application/json" {
+		t.Fatalf("Content-Type = %q, want %q", gotContentType, "application/json")
+	}
+	if gotBody != body {
+		t.Fatalf("body = %q, want %q", gotBody, body)
+	}
+}
+
+func TestPostSummaryComment_BadStatus(t *testing.T) {
+	prevToken, prevTimeout := config.GithubToken, config.RequestTimeout
+	t.Cleanup(func() {
+		config.GithubToken = prevToken
+		config.RequestTimeout = prevTimeout
+	})
+	config.GithubToken = "gh-token"
+	config.RequestTimeout = 2
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("server exploded"))
+	}))
+	t.Cleanup(srv.Close)
+
+	err := PostSummaryComment(context.Background(), srv.URL, `{"body":"summary"}`)
+	if err == nil {
+		t.Fatal("expected PostSummaryComment error for non-201 status")
+	}
+	if !strings.Contains(err.Error(), "Unexpected status code 500") {
+		t.Fatalf("error = %q, want status text", err.Error())
+	}
+}
+
 func TestSendRequestAIEngine_SuccessAndBadStatus(t *testing.T) {
-	prevPort, prevSecret, prevTimeout := config.AIEnginePort, config.AIEngineSecret, config.AiEngineRequestTimeout
+	prevPort, prevSecret, prevTimeout := config.AIEnginePort, config.AIEngineSecret, config.RequestTimeout
 	t.Cleanup(func() {
 		config.AIEnginePort = prevPort
 		config.AIEngineSecret = prevSecret
-		config.AiEngineRequestTimeout = prevTimeout
+		config.RequestTimeout = prevTimeout
 	})
 	config.AIEngineSecret = "aisec"
-	config.AiEngineRequestTimeout = 2
+	config.RequestTimeout = 2
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -187,9 +267,9 @@ func TestSendRequestAIEngine_SuccessAndBadStatus(t *testing.T) {
 		if r.Header.Get("HMAC-Signature-256") == "" {
 			t.Error("missing HMAC header")
 		}
-		body, _ := io.ReadAll(r.Body)
 		var req types.AIEngineRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		jsonDecoder := json.NewDecoder(r.Body)
+		if err := jsonDecoder.Decode(&req); err != nil {
 			t.Errorf("body: %v", err)
 		}
 		if req.Wfid != 9 {

@@ -1,28 +1,6 @@
-# docker-compose.yml
-#
-# Brings up the full local development stack:
-#   postgres      — PostgreSQL 16 with pgvector extension
-#   redis         — Redis 7 (Celery broker + result backend)
-#   ai-engine     — Python FastAPI service (port 8001)
-#   celery-worker — Background task worker for log analysis / RAG / patch gen
-#   orchestrator  — Go webhook/pipeline service (port 8080)
-#
-# Setup: copy ai_engine/.env.example -> ai_engine/.env and
-# orchestrator/.env.example -> orchestrator/.env, then fill in the values.
-# AI_ENGINE_SECRET must be identical in both files.
-#
-# Usage:
-#   docker compose up --build
-#
-# NOTE: PostgreSQL runs the SQL files in migrations/ as init scripts on first
-# startup (when the data volume is empty). If you change the schema, run:
-#   docker compose down -v
-# to wipe the volume and re-apply migrations from scratch.
-
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: aiplatform-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -30,90 +8,55 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      # Mount migrations as init scripts; executed once in alphabetical order.
+      - pgdata:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d aiplatform"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: aiplatform-redis
     ports:
       - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
-  ai-engine:
-    build:
-      context: ./ai_engine
-      dockerfile: Dockerfile
-    container_name: aiplatform-ai-engine
-    ports:
-      - "8001:8001"
-    env_file:
-      - ./ai_engine/.env
-    # Compose-network overrides: these always win over values in .env.
+  x-ai-common: &ai-common
+    build: ./ai_engine
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
       REDIS_URL: redis://redis:6379/0
       ORCHESTRATOR_URL: http://host.docker.internal:8080
+      AI_ENGINE_SECRET: ${AI_ENGINE_SECRET}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  ai-service:
+    build: ./ai_engine
+    <<: *ai-common
+    ports:
+      - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # Hot-reload: mounts source so code changes apply without rebuilding the image.
-    volumes:
-      - ./ai_engine:/app
 
   celery-worker:
-    build:
-      context: ./ai_engine
-      dockerfile: Dockerfile
-    container_name: aiplatform-celery-worker
-    # Override the default CMD to start the Celery worker instead of uvicorn.
+    build: ./ai_engine
+    <<: *ai-common
     command: celery -A app.tasks.workers.celery_app worker --loglevel=info
-    env_file:
-      - ./ai_engine/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/aiplatform
-      REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ./ai_engine:/app
-
-  orchestrator:
-    build:
-      context: ./orchestrator
-      dockerfile: Dockerfile
-    container_name: aiplatform-orchestrator
-    ports:
-      - "8080:8080"
-    env_file:
-      - ./orchestrator/.env
-    # Compose-network overrides: these always win over values in .env.
-    environment:
-      AI_ENGINE_HOST: ai-engine
-      AI_ENGINE_PORT: 8001
-      PORT: 8080
-    # Mounts the host Docker socket so the orchestrator can build/run test
-    # containers on the same daemon docker-compose itself is using.
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - ai-engine
 
 volumes:
-  postgres_data:
+  pgdata:

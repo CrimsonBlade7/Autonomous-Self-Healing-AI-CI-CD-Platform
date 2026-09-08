@@ -121,7 +121,7 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 					return
 				}
 			}
-			newCtx, cancel := context.WithTimeout(context.Background(), time.Duration(config.AIEngineRequestCloseTimeout)*time.Second)
+			newCtx, cancel := context.WithTimeout(context.Background(), time.Duration(config.RequestCloseTimeout)*time.Second)
 			defer cancel()
 			if err := servertools.SendRequestAIEngine(newCtx, "close", types.AIEngineRequest{Wfid: wf.wfid}); err != nil {
 				wf.errorChannel <- ErrorObject{
@@ -269,10 +269,10 @@ func (wf *Workflow) runWorkflow(ctx context.Context, cli *dockerClient.Client, p
 				if aier == nil {
 					panic("RUN_TESTS should always come from a pull request.")
 				}
-				if err := wstools.WriteSummary(filepath.Join(wf.workspace.path, "summary.md"), aier.Summary); err != nil {
+				if err := servertools.PostSummaryComment(ctx, wf.pullRequest.CommentsURL, aier.Summary); err != nil {
 					wf.errorChannel <- ErrorObject{
 						wfid: wf.wfid,
-						err:  fmt.Errorf("Failed to write summary: %w", err),
+						err:  fmt.Errorf("Failed to write summary comment: %w", err),
 					}
 					continue
 				}

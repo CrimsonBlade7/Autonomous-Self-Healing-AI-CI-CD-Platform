@@ -82,19 +82,3 @@ func InsertTests(path string, data []byte) (err error) {
 
 	return nil
 }
-
-// Adds a summary file at path containing text.
-func WriteSummary(path, text string) (err error) {
-	file, err := os.Create(path)
-	if err != nil {
-		return fmt.Errorf("Failed to create summary file: %w", err)
-	}
-	defer file.Close()
-
-	if _, err := file.Write([]byte(text)); err != nil {
-		return fmt.Errorf("Failed to write summary: %w", err)
-	}
-
-	return nil
-}
-

@@ -40,18 +40,6 @@ func TestInsertTestsAndWriteSummary(t *testing.T) {
 	if string(got) != "package foo" {
 		t.Errorf("tests file = %q", got)
 	}
-
-	sumPath := filepath.Join(dir, "summary.md")
-	if err := WriteSummary(sumPath, "all good"); err != nil {
-		t.Fatalf("WriteSummary: %v", err)
-	}
-	got, err = os.ReadFile(sumPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(got) != "all good" {
-		t.Errorf("summary = %q", got)
-	}
 }
 
 func TestInitWorkspace_Success(t *testing.T) {

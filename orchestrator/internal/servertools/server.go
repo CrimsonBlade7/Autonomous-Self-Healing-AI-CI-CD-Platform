@@ -22,6 +22,8 @@ import (
 	"github.com/benl1006/Autonomous-CI-Platform/orchestrator/internal/types"
 )
 
+const githubAPIVersion = "2026-03-10"
+
 // Generates the HMAC key based on the message and secret
 func generateHMAC(message []byte, secret string) (string, error) {
 	hash := hmac.New(sha256.New, []byte(secret))
@@ -176,7 +178,7 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 	}
 
 	cli := http.Client{
-		Timeout: seconds(config.AiEngineRequestTimeout),
+		Timeout: seconds(config.RequestTimeout),
 	}
 
 	msgBytes, err := json.Marshal(req)
@@ -209,6 +211,35 @@ func SendRequestAIEngine(ctx context.Context, jobType string, req types.AIEngine
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Bad response, status: %v", resp.StatusCode)
 	}
+	return nil
+}
+
+// Posts a comment on the pull request for the results of the test.
+func PostSummaryComment(ctx context.Context, commentsURL string, body string) (err error) {
+	// TODO: unimplemented
+	cli := http.Client{
+		Timeout: seconds(config.RequestTimeout),
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, commentsURL, strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("Failed to create http request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+config.GithubToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", githubAPIVersion)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := cli.Do(req)
+	if err != nil {
+		return fmt.Errorf("Failed to send http request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Unexpected status code %v posting comment: %s", resp.StatusCode, respBody)
+	}
+
 	return nil
 }
 

@@ -101,9 +101,9 @@ func TestSendUpdatesToRemote(t *testing.T) {
 }
 
 func TestRunWorkflow_CancelDoesNotDoubleClose(t *testing.T) {
-	prevTimeout := config.AIEngineRequestCloseTimeout
-	t.Cleanup(func() { config.AIEngineRequestCloseTimeout = prevTimeout })
-	config.AIEngineRequestCloseTimeout = 0
+	prevTimeout := config.RequestCloseTimeout
+	t.Cleanup(func() { config.RequestCloseTimeout = prevTimeout })
+	config.RequestCloseTimeout = 0
 
 	errCh := make(chan ErrorObject, 2)
 	wf := newWorkflow(samplePR("opened"), errCh)
