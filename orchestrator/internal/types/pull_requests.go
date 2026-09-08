@@ -14,6 +14,7 @@ type PullRequest struct {
 	HeadSHA string `json:"headsha"`
 	BaseSHA string `json:"basesha"`
 	Merged  bool   `json:"merged"`
+	CommentsURL     string `json:"url"`
 }
 
 // Populates fields from a byte slice
