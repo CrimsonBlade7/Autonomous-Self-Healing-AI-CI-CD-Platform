@@ -48,7 +48,7 @@ func (c *GithubClient) updateWorkspace(ctx context.Context, wsPath string, pr ty
 
 	err = repo.FetchContext(ctx, &git.FetchOptions{
 		RemoteURL:     config.RepositoryUrl,
-		ClientOptions: []gitPlumbingClient.Option{gitPlumbingClient.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
+		ClientOptions: []gitPlumbingClient.Option{gitPlumbingClient.WithHTTPAuth(&http.BasicAuth{Username: "CI-Platform", Password: config.GithubToken})},
 		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", pr.Branch, localBranch))},
 		Depth:         1,
 	})
@@ -99,7 +99,7 @@ func (c *GithubClient) AddAllCommitPush(commitMsg, wsPath, branch string) (newSh
 	if err := repo.Push(&git.PushOptions{
 		RemoteName:    "origin",
 		RemoteURL:     remote.Config().URLs[0],
-		ClientOptions: []gitPlumbingClient.Option{gitPlumbingClient.WithHTTPAuth(&http.TokenAuth{Token: config.GithubToken})},
+		ClientOptions: []gitPlumbingClient.Option{gitPlumbingClient.WithHTTPAuth(&http.BasicAuth{Username: "CI-Platform", Password: config.GithubToken})},
 		RefSpecs:      []gitConfig.RefSpec{gitConfig.RefSpec(fmt.Sprintf("refs/heads/%s:refs/heads/%s", localBranch, branch))},
 		Force:         true,
 	}); err != nil {
