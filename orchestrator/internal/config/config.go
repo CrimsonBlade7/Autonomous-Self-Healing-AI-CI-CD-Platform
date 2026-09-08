@@ -14,24 +14,24 @@ import (
 var (
 	WsDir string
 
-	OrchRootDir                 string
-	Port                        string = "8080"
-	GithubToken                 string
-	RepositoryUrl               string
-	GithubSecret                string
-	AIEngineSecret              string
-	AIEngineHost                string = "localhost"
-	AIEnginePort                string = "8001"
-	AiEngineRequestTimeout      int    = 5   // seconds
-	ServerShutdownTimeout       int    = 30  // seconds
-	ReadHeaderTimeout           int    = 2   // seconds
-	WriteTimeout                int    = 5   // seconds
-	ContainerTimeout            int    = 10  // minutes
-	AIEngineRequestCloseTimeout int    = 10  // seconds
-	DockerStartTimeout          int    = 10  // seconds
-	ContainerMemoryCap          int    = 512 // MB
-	MaxTestPatchingAttempts     int    = 10
-	TestingEnvSlice             []string
+	OrchRootDir             string
+	Port                    string = "8080"
+	GithubToken             string
+	RepositoryUrl           string
+	GithubSecret            string
+	AIEngineSecret          string
+	AIEngineHost            string = "localhost"
+	AIEnginePort            string = "8000"
+	RequestTimeout          int    = 5   // seconds
+	ServerShutdownTimeout   int    = 30  // seconds
+	ReadHeaderTimeout       int    = 2   // seconds
+	WriteTimeout            int    = 5   // seconds
+	ContainerTimeout        int    = 10  // minutes
+	RequestCloseTimeout     int    = 10  // seconds
+	DockerStartTimeout      int    = 10  // seconds
+	ContainerMemoryCap      int    = 512 // MB
+	MaxTestPatchingAttempts int    = 10
+	TestingEnvSlice         []string
 )
 
 const (
@@ -125,10 +125,10 @@ func loadEnv() error {
 
 	// Optional numeric overrides from environment
 
-	if valAiTimeout := os.Getenv("AI_ENGINE_REQUEST_TIMEOUT"); valAiTimeout != "" {
+	if valAiTimeout := os.Getenv("REQUEST_TIMEOUT"); valAiTimeout != "" {
 		parsedVal, err := strconv.Atoi(valAiTimeout)
 		if err == nil {
-			AiEngineRequestTimeout = parsedVal
+			RequestTimeout = parsedVal
 		}
 	}
 
@@ -156,7 +156,7 @@ func loadEnv() error {
 	if valAiTimeout := os.Getenv("AI_ENGINE_REQUEST_CLOSE_TIMEOUT"); valAiTimeout != "" {
 		parsedVal, err := strconv.Atoi(valAiTimeout)
 		if err == nil {
-			AiEngineRequestTimeout = parsedVal
+			RequestTimeout = parsedVal
 		}
 	}
 

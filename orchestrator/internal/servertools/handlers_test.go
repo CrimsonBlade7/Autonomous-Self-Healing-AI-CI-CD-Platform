@@ -169,14 +169,14 @@ func TestSendRequestAIEngine_InvalidJobType(t *testing.T) {
 }
 
 func TestSendRequestAIEngine_SuccessAndBadStatus(t *testing.T) {
-	prevPort, prevSecret, prevTimeout := config.AIEnginePort, config.AIEngineSecret, config.AiEngineRequestTimeout
+	prevPort, prevSecret, prevTimeout := config.AIEnginePort, config.AIEngineSecret, config.RequestTimeout
 	t.Cleanup(func() {
 		config.AIEnginePort = prevPort
 		config.AIEngineSecret = prevSecret
-		config.AiEngineRequestTimeout = prevTimeout
+		config.RequestTimeout = prevTimeout
 	})
 	config.AIEngineSecret = "aisec"
-	config.AiEngineRequestTimeout = 2
+	config.RequestTimeout = 2
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
