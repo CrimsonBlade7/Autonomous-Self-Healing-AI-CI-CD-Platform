@@ -82,4 +82,3 @@ func InsertTests(path string, data []byte) (err error) {
 
 	return nil
 }
-

@@ -6,15 +6,15 @@ import (
 )
 
 type PullRequest struct {
-	Number  int    `json:"number"`
-	Action  string `json:"action"`
-	Branch  string `json:"branch"`
-	Title   string `json:"title"`
-	Body    string `json:"body"`
-	HeadSHA string `json:"headsha"`
-	BaseSHA string `json:"basesha"`
-	Merged  bool   `json:"merged"`
-	CommentsURL     string `json:"url"`
+	Number      int    `json:"number"`
+	Action      string `json:"action"`
+	Branch      string `json:"branch"`
+	Title       string `json:"title"`
+	Body        string `json:"body"`
+	HeadSHA     string `json:"headsha"`
+	BaseSHA     string `json:"basesha"`
+	Merged      bool   `json:"merged"`
+	CommentsURL string `json:"url"`
 }
 
 // Populates fields from a byte slice

@@ -239,7 +239,7 @@ func PostSummaryComment(ctx context.Context, commentsURL string, body string) (e
 		respBody, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("Unexpected status code %v posting comment: %s", resp.StatusCode, respBody)
 	}
-	
+
 	return nil
 }
 

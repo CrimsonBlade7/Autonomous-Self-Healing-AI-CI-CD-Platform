@@ -16,12 +16,12 @@ import (
 )
 
 type fakeImageManager struct {
-	list    dockerClient.ImageListResult
-	listErr error
-	removed []string
+	list      dockerClient.ImageListResult
+	listErr   error
+	removed   []string
 	removeErr error
-	build   dockerClient.ImageBuildResult
-	buildErr error
+	build     dockerClient.ImageBuildResult
+	buildErr  error
 }
 
 func (f *fakeImageManager) ImageList(ctx context.Context, options dockerClient.ImageListOptions) (dockerClient.ImageListResult, error) {
