@@ -86,18 +86,19 @@ func main() {
 
 /*
 TODO List:
-	- testing *
 	- handle hanging workflows due to errors: currently we just drop the whole workflow with no retry
-	- dockerize this project
-	- add docker volumes
+	- adding timeout contexts for requests?
+	- handle dead containers
+	- list testing and platform limitations and conditions; close platfrom if conditions are not met *
+	- implement post summary comment
+
+Wishlist
+	- persistance
+		- add docker volumes
 		- workspaces
 		- pushed commits
 		- workflows
 		- log storage
-	- handle dead containers
-	- list testing and platform limitations and conditions; close platfrom if conditions are not met *
-
-Wishlist
 	- multi-service testing
 	- seperate test files/test directory structure
 	- running tests multiple times?
