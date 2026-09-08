@@ -1,20 +1,23 @@
 # ============================================================
 # Root Makefile — Autonomous-CI-Platform
-# Orchestrator (Go) is run natively; ai-service/Postgres/Redis
-# run via docker-compose. See docker-compose.yml for details.
+# Orchestrator (Go) is run natively in dev; ai-service/Postgres/Redis
+# run via docker-compose. Prod containerizes the orchestrator too —
+# see docker-compose.prod.yml.
 # ============================================================
 
 COMPOSE      = docker-compose
+PROD_COMPOSE = $(COMPOSE) -f docker-compose.yml -f docker-compose.prod.yml
 ORCH_DIR     = orchestrator
 BUILD_DIR    = $(ORCH_DIR)/out
 BINARY_NAME  = orchestrator-bin
 
 .PHONY: help dev dev-up dev-down dev-restart dev-logs migrate-reset \
         orch-run orch-build orch-build-linux orch-build-windows orch-clean \
-        run-windows test test-orch test-ai fmt
+        run-windows test test-orch test-ai fmt \
+        prod-up prod-down prod-logs
 
 help:
-	@echo "Infra (ai-service, postgres, redis):"
+	@echo "Infra (dev — ai-service, postgres, redis; orchestrator runs natively):"
 	@echo "  make dev-up          # build + start infra in the background"
 	@echo "  make dev-down        # stop infra"
 	@echo "  make dev-restart     # dev-down + dev-up"
@@ -28,13 +31,18 @@ help:
 	@echo "  make orch-clean      # remove build artifacts"
 	@echo "  make run-windows     # build for windows, start ngrok, run binary"
 	@echo ""
+	@echo "Prod (orchestrator containerized, see docker-compose.prod.yml):"
+	@echo "  make prod-up         # build + start orchestrator, ai-service, postgres, redis"
+	@echo "  make prod-down       # stop everything"
+	@echo "  make prod-logs       # tail orchestrator + ai-service + celery-worker logs"
+	@echo ""
 	@echo "Combined:"
 	@echo "  make dev             # start infra, then reminds you to run orch-run"
 	@echo "  make test            # go test ./... + pytest inside ai-service container"
 	@echo "  make fmt             # gofmt the orchestrator"
 
 # ---------------------------------------------------------------
-# Infra: ai-service, postgres, redis (docker-compose)
+# Infra: ai-service, postgres, redis (docker-compose, dev)
 # ---------------------------------------------------------------
 
 dev-up:
@@ -53,7 +61,7 @@ migrate-reset:
 	$(COMPOSE) down -v
 
 # ---------------------------------------------------------------
-# Orchestrator (native — NOT containerized, see architecture notes)
+# Orchestrator (native — NOT containerized in dev, see architecture notes)
 # ---------------------------------------------------------------
 
 orch-run:
@@ -80,6 +88,19 @@ run-windows: orch-clean orch-build-windows
 	@echo Starting ngrok and app...
 	powershell -Command "Start-Process ngrok -ArgumentList 'http 8080'"
 	$(ORCH_DIR)/out/$(BINARY_NAME).exe
+
+# ---------------------------------------------------------------
+# Prod (orchestrator containerized — see docker-compose.prod.yml)
+# ---------------------------------------------------------------
+
+prod-up:
+	$(PROD_COMPOSE) up --build -d
+
+prod-down:
+	$(PROD_COMPOSE) down
+
+prod-logs:
+	$(PROD_COMPOSE) logs -f orchestrator ai-service celery-worker
 
 # ---------------------------------------------------------------
 # Combined
